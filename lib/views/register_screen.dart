@@ -1,52 +1,44 @@
-// ignore_for_file: use_super_parameters, library_private_types_in_public_api, unused_import, unused_element
+// ignore_for_file: use_super_parameters, library_private_types_in_public_api, avoid_print, unused_import, unused_element
 
 import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
+import 'package:provider/provider.dart';
 import '../component/Button_component.dart';
 import '../component/input_component.dart';
 import '../controllers/register_controller.dart';
 
 /// 注册页面
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({Key? key}) : super(key: key);
+  /// 注册成功回调
+  final VoidCallback onRegisterSuccess;
+  
+  /// 返回登录页面回调
+  final VoidCallback onBackToLogin;
+
+  const RegisterScreen({
+    Key? key,
+    required this.onRegisterSuccess,
+    required this.onBackToLogin,
+  }) : super(key: key);
 
   @override
   _RegisterScreenState createState() => _RegisterScreenState();
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  // 注册控制器
-  late RegisterController _controller;
-  
   // 全局表单验证键
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = RegisterController();
-    _controller.onLoadingStateChanged = () {
-      if (mounted) setState(() {});
-    };
-  }
-  
-  @override
-  void dispose() {
-    _controller.onLoadingStateChanged = null;
-    _controller.dispose();
-    super.dispose();
-  }
-
   // 更新密码可见性
-  void _updatePasswordVisibility(int index, bool isVisible) {
-    setState(() {
-      _controller.updatePasswordVisibility(index, isVisible);
-    });
+  void _updatePasswordVisibility(BuildContext context, int index, bool isVisible) {
+    Provider.of<RegisterController>(context, listen: false)
+        .updatePasswordVisibility(index, isVisible);
   }
 
   // 添加密码验证方法
-  String? _validatePasswordMatch(String? value) {
-    if (value != _controller.passwordController.text) {
+  String? _validatePasswordMatch(BuildContext context, String? value) {
+    final controller = Provider.of<RegisterController>(context, listen: false);
+    if (value != controller.passwordController.text) {
       return '两次输入的密码不一致';
     }
     return null;
@@ -54,7 +46,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_controller.isLoading) {
+    final controller = context.watch<RegisterController>();
+
+    if (controller.isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -93,11 +87,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     
                     // 输入框组
                     InputComponent.createMultiInputs(
-                      inputs: _controller.getInputFields(),
-                      controllers: _controller.controllers,
+                      inputs: controller.getInputFields(),
+                      controllers: controller.controllers,
                       spacing: 24.0,
-                      passwordVisibleList: _controller.passwordVisibleList,
-                      onTogglePasswordVisibility: _updatePasswordVisibility,
+                      passwordVisibleList: controller.passwordVisibleList,
+                      onTogglePasswordVisibility: (index, isVisible) =>
+                          _updatePasswordVisibility(context, index, isVisible),
                     ),
                     
                     // 用户协议同意选项
@@ -112,11 +107,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             size: 16,
                             color: Colors.white,
                           ),
-                          value: _controller.agreeToTerms,
+                          value: controller.agreeToTerms,
                           onChanged: (value) {
-                            setState(() {
-                              _controller.updateAgreeToTerms(value);
-                            });
+                            controller.updateAgreeToTerms(value);
                           },
                         ),
                         const SizedBox(width: 8),
@@ -147,12 +140,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     // 注册按钮
                     GFButton(
                       onPressed: () async {
-                        if (_formKey.currentState?.validate() ?? false) {
-                          await _controller.handleRegister(context);
+                        if (_formKey.currentState?.validate() ?? false && !controller.isLoading) {
+                          final success = await controller.handleRegister(context);
+                          if (success) {
+                            widget.onRegisterSuccess();
+                          }
                         }
                       },
-                      text: '注册',
-                      icon: const Icon(Icons.person_add, color: Colors.white),
+                      text: controller.isLoading ? '注册中...' : '注册',
+                      icon: controller.isLoading ? null : const Icon(Icons.person_add, color: Colors.white),
                       size: GFSize.LARGE,
                       fullWidthButton: true,
                       color: Theme.of(context).primaryColor,
@@ -164,7 +160,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     // 返回登录按钮
                     Center(
                       child: GFButton(
-                        onPressed: () => _controller.navigateToLogin(context),
+                        onPressed: widget.onBackToLogin,
                         text: '返回登录',
                         type: GFButtonType.transparent,
                         textStyle: const TextStyle(

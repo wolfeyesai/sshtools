@@ -11,9 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:blui/main.dart';
 import 'package:blui/models/auth_model.dart';
-import 'package:blui/models/game_model.dart';
+import 'package:blui/models/device_model.dart';
 import 'package:blui/models/login_model.dart';
+import 'package:blui/models/settings_model.dart';
 import 'package:blui/models/ui_config_model.dart';
+import 'package:blui/services/ssh_service.dart';
 
 void main() {
   testWidgets('应用初始化测试', (WidgetTester tester) async {
@@ -23,17 +25,23 @@ void main() {
     
     // 初始化所需的模型
     final authModel = AuthModel();
-    final gameModel = GameModel();
+    final deviceModel = DeviceModel();
     final loginModel = LoginModel();
     final uiConfigModel = UIConfigModel();
+    final settingsModel = SettingsModel();
+    final sshService = SshService(settingsModel: settingsModel);
     
     // 构建应用并触发一帧
-    await tester.pumpWidget(MyApp(
-      sharedPreferences: sharedPreferences,
-      authModel: authModel,
-      gameModel: gameModel,
-      loginModel: loginModel,
-      uiConfigModel: uiConfigModel,
+    await tester.pumpWidget(Builder(
+      builder: (context) => MyApp(
+        sharedPreferences: sharedPreferences,
+        authModel: authModel,
+        deviceModel: deviceModel,
+        loginModel: loginModel,
+        uiConfigModel: uiConfigModel,
+        settingsModel: settingsModel,
+        sshService: sshService,
+      ),
     ));
     
     // 验证应用已经初始化

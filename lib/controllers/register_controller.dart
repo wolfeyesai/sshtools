@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import '../component/message_component.dart';
 import '../models/login_model.dart';
-import '../models/game_model.dart';
 import '../models/auth_model.dart';
 import '../utils/logger.dart';
 // 不再需要直接导入WebSocket工具，使用ServerService
@@ -13,16 +12,29 @@ import 'dart:convert'; // 导入JSON转换库
 import 'dart:async'; // 导入异步库
 import 'package:provider/provider.dart';
 
+import '../services/auth_service.dart'; // 保留 AuthService 导入
+
 /// 注册控制器，处理注册页面的所有逻辑
-class RegisterController {
+class RegisterController with ChangeNotifier {
   // 表单控制器
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController = TextEditingController();
   
   // 状态
-  bool agreeToTerms = false;
-  bool isLoading = false;
+  bool _agreeToTerms = false;
+  bool get agreeToTerms => _agreeToTerms;
+  set agreeToTerms(bool value) {
+    _agreeToTerms = value;
+    notifyListeners();
+  }
+  
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
+  set isLoading(bool value) {
+    _isLoading = value;
+    notifyListeners();
+  }
   
   // 控制器列表
   List<TextEditingController> get controllers => [
@@ -48,305 +60,108 @@ class RegisterController {
   
   // 模型引用 - 用于回调中的状态更新
   LoginModel? _loginModelRef;
-  GameModel? _gameModelRef;
   AuthModel? _authModelRef;
   BuildContext? _registerContext;
   
   // 加载状态变更回调
   VoidCallback? onLoadingStateChanged;
   
+  // 服务
+  final AuthService _authService; // 添加 AuthService 依赖
+  final LoginModel _loginModel; // LoginModel 依赖
+  
   // 构造函数，初始化控制器
-  RegisterController() {
-    // 不再需要注册WebSocket回调，将在handleRegister方法中处理
-  }
-  
-  // 处理服务器消息
-  void _handleServerMessage(dynamic message) {
-    try {
-      // 解析JSON消息
-      final Map<String, dynamic> responseData = jsonDecode(message);
-      final String action = responseData['action'] ?? '';
-      
-      // 只处理注册相关消息
-      if (action != 'register_modify_response' && action != 'register_modify' && responseData['status'] != 'error') {
-        return;
-      }
-      
-      log.i(_logTag, '收到注册相关消息', action);
-      
-      if (action == 'register_modify_response' || action == 'register_modify') {
-        if (_registerContext != null && _registerContext!.mounted) {
-          _handleRegisterResponse(responseData, _registerContext!);
-        } else {
-          _handleRegisterResponseWithoutContext(responseData);
-        }
-      } else if (responseData['status'] == 'error') {
-        _showErrorToast(responseData['message'] ?? '请求失败，请重试');
-      }
-    } catch (e) {
-      log.e(_logTag, '解析服务器消息失败', e.toString());
-      _showErrorToast('接收到无效消息，请重试');
-    }
-  }
-  
-  // 显示错误消息
-  void _showErrorToast(String message) {
-    if (_registerContext != null && _registerContext!.mounted) {
-      MessageComponent.showIconToast(
-        context: _registerContext!,
-        message: message,
-        type: MessageType.error,
-        duration: const Duration(seconds: 3),
-      );
-    }
-  }
-  
-  // 在没有BuildContext的情况下处理注册响应
-  void _handleRegisterResponseWithoutContext(Map<String, dynamic> response) {
-    _registerRequestTimer?.cancel();
-    
-    final bool success = response['status'] == 'success' || response['status'] == 'ok';
-    
-    log.i(_logTag, '处理注册响应(无上下文): ${success ? '成功' : '失败'}');
-    
-    isLoading = false;
-    onLoadingStateChanged?.call();
-  }
-  
-  // 处理注册响应
-  void _handleRegisterResponse(Map<String, dynamic> response, BuildContext context) {
-    _registerRequestTimer?.cancel();
-    
-    final bool success = response['status'] == 'success' || response['status'] == 'ok';
-    final String message = response['message'] ?? '注册处理完成';
-    
-    log.i(_logTag, '处理注册响应: ${success ? '成功' : '失败'}');
-    
-    if (success && context.mounted) {
-      // 显示成功消息
-      MessageComponent.showIconToast(
-        context: context,
-        message: '注册成功！正在准备数据...',
-        type: MessageType.success,
-        duration: const Duration(seconds: 2),
-      );
-      
-      // 获取模型
-      final loginModel = Provider.of<LoginModel>(context, listen: false);
-      final gameModel = Provider.of<GameModel>(context, listen: false);
-      final authModel = Provider.of<AuthModel>(context, listen: false);
-      
-      // 获取注册用户名
-      final String registeredUsername = usernameController.text.trim();
-      
-      // 更新登录状态
-      authModel.setAuthInfo(
-        username: registeredUsername,
-        token: loginModel.token,
-        rememberPassword: true
-      );
-      
-      loginModel.updateRememberPassword(true);
-      
-      // 处理服务器返回数据
-      if (response['data'] != null) {
-        try {
-          // 处理用户信息
-          final userInfo = response['data']['userInfo'];
-          if (userInfo != null) {
-            // 更新令牌
-            if (userInfo['token'] != null) {
-              loginModel.updateToken(userInfo['token']);
-              authModel.setAuthInfo(
-                username: authModel.username,
-                token: userInfo['token'],
-                rememberPassword: true
-              );
-            }
-            
-            // 更新用户名
-            if (userInfo['username'] != null) {
-              loginModel.updateUsername(userInfo['username']);
-              authModel.setAuthInfo(
-                username: userInfo['username'],
-                token: authModel.token,
-                rememberPassword: true
-              );
-            }
-          }
-          
-          // 更新游戏配置
-          if (response['data']['homeConfig'] != null) {
-            final homeConfig = response['data']['homeConfig'];
-            gameModel.updateCurrentGame(homeConfig['gameName'] ?? 'csgo2');
-            gameModel.updateCardKey(homeConfig['cardKey'] ?? '');
-          }
-        } catch (e) {
-          log.e(_logTag, '更新配置出错', e.toString());
-        }
-      }
-      
-      // 更新登录状态
-      loginModel.updateLoginStatus('true');
-      loginModel.updateLastLoginTime(DateTime.now().toIso8601String());
-      
-      // 设置登录后刷新标记
-      loginModel.updateRefreshAfterLogin(true);
-      
-      // 显示自动登录消息
-      MessageComponent.showIconToast(
-        context: context,
-        message: '注册成功，正在自动登录...',
-        type: MessageType.success,
-        duration: const Duration(seconds: 2),
-      );
-      
-      // 清空输入框并重置加载状态
-      _resetFields();
-      
-      // 导航到主页
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-        }
-      });
-    } else if (!success && context.mounted) {
-      // 显示错误消息
-      MessageComponent.showIconToast(
-        context: context,
-        message: message.isNotEmpty ? message : '注册失败，请重试',
-        type: MessageType.error,
-        duration: const Duration(seconds: 3),
-      );
-      
-      // 重置加载状态
-      isLoading = false;
-      onLoadingStateChanged?.call();
-    }
-  }
+  RegisterController({required AuthService authService, required LoginModel loginModel})
+      : _authService = authService,
+        _loginModel = loginModel; // 修改构造函数，接收 AuthService 和 LoginModel
   
   // 重置字段
   void _resetFields() {
     usernameController.clear();
     passwordController.clear();
     confirmPasswordController.clear();
-    isLoading = false;
-    onLoadingStateChanged?.call();
+    _agreeToTerms = false; // 重置同意状态
+    passwordVisibleList = [false, false]; // 重置密码可见性
+    // isLoading状态由handleRegister方法处理
+    notifyListeners(); // 通知UI更新重置后的状态
   }
 
   // 处理注册按钮点击
-  Future<void> handleRegister(BuildContext context) async {
-    // 基本表单验证
-    if (passwordController.text != confirmPasswordController.text) {
-      _showToast(context, '两次输入的密码不一致', MessageType.error);
-      return;
-    }
-    
-    if (!agreeToTerms) {
-      _showToast(context, '请先同意用户协议与隐私政策', MessageType.warning);
-      return;
-    }
-    
-    final String username = usernameController.text.trim();
-    final String password = passwordController.text.trim();
-    
-    if (username.isEmpty) {
-      _showToast(context, '用户名不能为空', MessageType.warning);
-      return;
-    }
-    
-    if (password.isEmpty) {
-      _showToast(context, '密码不能为空', MessageType.warning);
-      return;
-    }
-    
-    // 更新状态
-    isLoading = true;
-    onLoadingStateChanged?.call();
-    _registerContext = context;
-    
-    // 获取服务
-    final serverService = Provider.of<ServerService>(context, listen: false);
-    
-    _showToast(context, '正在开始注册过程...', MessageType.info);
-    
-    // 检查连接状态
-    if (!serverService.isConnected) {
-      // 尝试连接
-      if (!await _connectToServer(context, serverService)) {
-        // 连接失败，重置状态并返回
-        isLoading = false;
-        onLoadingStateChanged?.call();
-        return;
-      }
+  Future<bool> handleRegister(BuildContext context) async {
+    // 检查是否同意用户协议
+    if (!_agreeToTerms) {
+      MessageComponent.showIconToast(
+        context: context,
+        message: '请先同意用户协议和隐私政策',
+        type: MessageType.warning,
+        duration: const Duration(seconds: 2),
+      );
+      return false;
     }
 
-    // 显示注册中消息
-    _showToast(context, '正在提交注册信息...', MessageType.info);
-    
-    // 设置超时处理
-    _registerRequestTimer?.cancel();
-    _registerRequestTimer = Timer(const Duration(seconds: 10), () {
-      if (isLoading) {
-        _showToast(context, '注册请求超时，请重试', MessageType.warning);
-        isLoading = false;
-        onLoadingStateChanged?.call();
-      }
-    });
-    
-    try {
-      // 获取模型实例
-      final loginModel = Provider.of<LoginModel>(context, listen: false);
-      final authModel = Provider.of<AuthModel>(context, listen: false);
-      final gameModel = Provider.of<GameModel>(context, listen: false);
-      
-      // 保存引用
-      _loginModelRef = loginModel;
-      _authModelRef = authModel;
-      _gameModelRef = gameModel;
-      
-      // 更新登录信息
-      loginModel.updateUsername(username);
-      loginModel.updatePassword(password);
-      await authModel.setAuthInfo(
-        username: username,
-        token: loginModel.token,
-        rememberPassword: true
+    // 基本表单验证已由 Form 组件处理，这里检查密码一致性
+    if (passwordController.text != confirmPasswordController.text) {
+       MessageComponent.showIconToast(
+        context: context,
+        message: '两次输入的密码不一致',
+        type: MessageType.warning,
+        duration: const Duration(seconds: 2),
       );
-      await loginModel.updateRememberPassword(true);
-      
-      // 构建注册数据
-      final registerData = {
-        'action': 'register_modify',
-        'content': {
-          'gameList': ['apex', 'cf', 'cfhd', 'csgo2', 'sj2', 'ssjj2', 'wwqy'],
-          'defaultGame': 'csgo2',
-          'username': username,
-          'password': password,
-          'createdAt': DateTime.now().toIso8601String(),
-          'updatedAt': DateTime.now().toIso8601String()
-        }
-      };
-      
-      // 记录注册请求
-      log.i(_logTag, '发送注册请求');
-      
-      // 添加消息监听器
-      _serverMessageListener = serverService.addMessageListener(_handleServerMessage);
-      
-      // 发送请求
-      serverService.sendMessage(jsonEncode(registerData));
-      
-      // 显示发送成功
-      _showToast(context, '注册请求已发送，等待服务器响应...', MessageType.info);
+      return false;
+    }
+
+    // 更新UI状态
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      // 调用 AuthService 进行注册认证
+      final success = await _authService.register(
+        serverAddress: _loginModel.serverAddress, // 从 LoginModel 获取服务器地址
+        serverPort: _loginModel.serverPort, // 从 LoginModel 获取端口
+        username: usernameController.text.trim(),
+        password: passwordController.text,
+      );
+
+      _isLoading = false;
+      notifyListeners();
+
+      if (success) {
+        // 注册成功
+        MessageComponent.showIconToast(
+          context: context,
+          message: _authService.errorMessage.isNotEmpty ? _authService.errorMessage : '注册成功！', // 使用AuthService中的消息
+          type: MessageType.success,
+          duration: const Duration(seconds: 2),
+        );
+
+        // 清空输入框并重置其他状态
+        _resetFields();
+
+        return true;
+      } else {
+        // 注册失败，显示 AuthService 中的错误消息
+        MessageComponent.showIconToast(
+          context: context,
+          message: _authService.errorMessage.isNotEmpty ? _authService.errorMessage : '注册失败，请重试', // 使用AuthService中的错误消息
+          type: MessageType.error,
+          duration: const Duration(seconds: 3),
+        );
+        return false;
+      }
+
     } catch (e) {
-      _registerRequestTimer?.cancel();
-      log.e(_logTag, '发送注册请求失败', e.toString());
-      
-      isLoading = false;
-      onLoadingStateChanged?.call();
-      
-      _showToast(context, '发送注册请求失败: ${e.toString()}', MessageType.error);
+      _isLoading = false;
+      notifyListeners();
+      // 处理 AuthService 中可能抛出的异常
+      log.e(_logTag, '注册过程中发生异常', e.toString());
+      MessageComponent.showIconToast(
+        context: context,
+        message: '注册过程中发生错误：${e.toString()}',
+        type: MessageType.error,
+        duration: const Duration(seconds: 3),
+      );
+      return false;
     }
   }
   
@@ -398,6 +213,7 @@ class RegisterController {
 
   // 返回登录页
   void navigateToLogin(BuildContext context) {
+    log.i(_logTag, '返回登录页面');
     Navigator.pop(context);
   }
   
@@ -408,48 +224,18 @@ class RegisterController {
         'label': '用户名',
         'hint': '请输入用户名',
         'icon': Icons.person,
-        'onChanged': (String value) {},
-        'validator': (String? value) {
-          if (value == null || value.isEmpty) {
-            return '请输入用户名';
-          }
-          if (value.length < 3) {
-            return '用户名长度不能少于3位';
-          }
-          return null;
-        }
       },
       {
         'label': '密码',
         'hint': '请输入密码',
         'icon': Icons.lock,
         'isPassword': true,
-        'onChanged': (String value) {},
-        'validator': (String? value) {
-          if (value == null || value.isEmpty) {
-            return '请输入密码';
-          }
-          if (value.length < 6) {
-            return '密码长度不能少于6位';
-          }
-          return null;
-        }
       },
       {
         'label': '确认密码',
         'hint': '请再次输入密码',
         'icon': Icons.lock_outline,
         'isPassword': true,
-        'onChanged': (String value) {},
-        'validator': (String? value) {
-          if (value == null || value.isEmpty) {
-            return '请确认密码';
-          }
-          if (value != passwordController.text) {
-            return '两次输入的密码不一致';
-          }
-          return null;
-        }
       },
     ];
   }
@@ -472,8 +258,6 @@ class RegisterController {
     _registerContext = null;
     _loginModelRef = null;
     _authModelRef = null;
-    _gameModelRef = null;
-    _serverMessageListener = null;
     
     // 释放控制器
     for (var controller in controllers) {
@@ -483,11 +267,17 @@ class RegisterController {
 
   // 更新密码可见性
   void updatePasswordVisibility(int index, bool isVisible) {
-    passwordVisibleList[index] = isVisible;
+    if (index >= 0 && index < passwordVisibleList.length) {
+      passwordVisibleList[index] = isVisible;
+      notifyListeners();
+    }
   }
   
   // 更新同意条款状态
-  void updateAgreeToTerms(bool value) {
-    agreeToTerms = value;
+  void updateAgreeToTerms(bool? value) {
+    if (value != null) {
+      _agreeToTerms = value;
+      notifyListeners();
+    }
   }
 } 

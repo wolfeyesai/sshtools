@@ -8,14 +8,25 @@ import '../component/input_component.dart';
 import '../component/background_component.dart';
 import '../component/status_indicator_component.dart'; // 导入新的状态指示器组件
 import '../controllers/login_controller.dart';
-import '../services/server_service.dart'; // 导入 ServerService
-import '../services/auth_service.dart'; // 导入 AuthService
-import '../models/auth_model.dart'; // 导入 AuthModel
-import '../models/login_model.dart'; // 导入 LoginModel
+import '../utils/logger.dart'; // 添加 Logger 导入
+// import '../services/server_service.dart'; // 导入 ServerService (移除)
+// import '../services/auth_service.dart'; // 导入 AuthService (移除)
+// import '../models/auth_model.dart'; // 导入 AuthModel (移除)
+// import '../models/login_model.dart'; // 导入 LoginModel (移除)
 
 /// 登录界面
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  /// 登录成功回调
+  final VoidCallback onLoginSuccess;
+  
+  /// 跳转到注册页面回调
+  final VoidCallback onRegister;
+
+  const LoginScreen({
+    Key? key, 
+    required this.onLoginSuccess,
+    required this.onRegister,
+  }) : super(key: key);
 
   @override
   _LoginScreenState createState() => _LoginScreenState();
@@ -24,6 +35,10 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   // 全局表单验证键
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  
+  // 日志工具
+  final log = Logger();
+  final String _logTag = 'LoginScreen';
 
   // 更新密码可见性
   void _updatePasswordVisibility(int index, bool isVisible) {
@@ -34,8 +49,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     // 使用Provider获取服务和控制器
-    final serverService = Provider.of<ServerService>(context);
-    final loginModel = Provider.of<LoginModel>(context);
     final controller = Provider.of<LoginController>(context);
 
     return BackgroundComponent.createGradientBackground(
@@ -86,16 +99,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       
                       const SizedBox(height: 12),
                       
-                      // 连接状态指示器
-                      StatusIndicatorComponent.createServerStatus(
-                        isConnected: serverService.isConnected,
-                        isConnecting: serverService.isConnecting,
-                        hasError: serverService.hasError,
-                        errorText: serverService.errorText,
-                        serverAddress: loginModel.serverAddress,
-                        serverPort: loginModel.serverPort,
-                      ),
-                      
                       // 登录状态指示器
                       if (controller.isLoading)
                         StatusIndicatorComponent.create(
@@ -104,24 +107,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       
                       const SizedBox(height: 8),
-                      
-                      // 连接服务器按钮
-                      ButtonComponent.create(
-                        type: ButtonType.secondary,
-                        label: serverService.isConnecting 
-                            ? '连接中...'
-                            : serverService.isConnected 
-                                ? '已连接服务器' 
-                                : '连接服务器',
-                        icon: const Icon(Icons.link),
-                        onPressed: serverService.isConnected || serverService.isConnecting
-                            ? null 
-                            : () => controller.handleConnectService(context),
-                        shape: ButtonShape.standard,
-                        fullWidth: true,
-                      ),
-                      
-                      const SizedBox(height: 16),
                       
                       // 登录和注册按钮并排
                       Row(
@@ -133,8 +118,17 @@ class _LoginScreenState extends State<LoginScreen> {
                               onPressed: controller.isLoading 
                                   ? null 
                                   : () {
+                                      log.i(_logTag, '用户点击了登录按钮');
                                       if (_formKey.currentState?.validate() ?? false) {
-                                        controller.handleLogin(context);
+                                        log.i(_logTag, '表单验证通过，开始登录流程');
+                                        controller.handleLogin(context).then((success) {
+                                          log.i(_logTag, '登录结果: ${success ? "成功" : "失败"}');
+                                          if (success) {
+                                            widget.onLoginSuccess();
+                                          }
+                                        });
+                                      } else {
+                                        log.w(_logTag, '表单验证失败');
                                       }
                                     },
                               text: controller.isLoading ? '登录中...' : '登录',
@@ -152,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Expanded(
                             flex: 2,
                             child: GFButton(
-                              onPressed: () => controller.handleRegister(context),
+                              onPressed: widget.onRegister,
                               text: '注册账号',
                               type: GFButtonType.transparent,
                               textColor: Colors.blue,

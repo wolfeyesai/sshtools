@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/sidebar_model.dart'; // 导入侧边栏模型
 import '../models/auth_model.dart'; // 导入认证模型
-import '../models/game_model.dart'; // 导入游戏模型 
 import '../utils/logger.dart'; // 导入日志工具
 import '../services/server_service.dart'; // 导入服务器服务
 import '../component/message_component.dart'; // 导入消息组件
@@ -28,7 +27,6 @@ class SideController extends ChangeNotifier {
   final ServerService _serverService;
   final SidebarModel _sidebarModel;
   final AuthModel _authModel;
-  final GameModel _gameModel;
   
   // 日志工具
   final log = Logger();
@@ -58,11 +56,9 @@ class SideController extends ChangeNotifier {
     required ServerService serverService,
     required SidebarModel sidebarModel,
     required AuthModel authModel,
-    required GameModel gameModel,
   }) : _serverService = serverService,
        _sidebarModel = sidebarModel,
-       _authModel = authModel,
-       _gameModel = gameModel {
+       _authModel = authModel {
     
     log.i(_logTag, '创建新的SideController实例 [${identityHashCode(this)}]');
     
@@ -107,10 +103,8 @@ class SideController extends ChangeNotifier {
       return;
     }
     
-    // 获取当前用户和游戏信息
+    // 获取当前用户信息
     final username = _authModel.username;
-    final gameName = _gameModel.currentGame;
-    final cardKey = _gameModel.cardKey;
     
     // 更新时间戳
     final now = DateTime.now().toIso8601String();
@@ -119,8 +113,6 @@ class SideController extends ChangeNotifier {
     final Map<String, dynamic> baseRequest = {
       'content': {
         'username': username,
-        'gameName': gameName,
-        'cardKey': cardKey,
         'updatedAt': now,
       }
     };
@@ -165,8 +157,6 @@ class SideController extends ChangeNotifier {
     
     log.i(_logTag, '已请求页面数据: $action', {
       'username': username,
-      'gameName': gameName,
-      'pageId': pageId
     });
     
     // 显示加载提示
@@ -228,8 +218,6 @@ class SideController extends ChangeNotifier {
     
     // 获取当前用户和游戏信息
     final username = _authModel.username;
-    final gameName = _gameModel.currentGame;
-    final cardKey = _gameModel.cardKey;
     
     // 更新时间戳
     final now = DateTime.now().toIso8601String();
@@ -239,8 +227,6 @@ class SideController extends ChangeNotifier {
       'action': 'heartbeat',
       'content': {
         'username': username,
-        'gameName': gameName,
-        'cardKey': cardKey,
         'updatedAt': now,
         'clientStatus': 'active',
       }
@@ -295,8 +281,6 @@ class SideController extends ChangeNotifier {
     
     // 基础信息
     final username = _authModel.username;
-    final gameName = _gameModel.currentGame;
-    final cardKey = _gameModel.cardKey;
     final now = DateTime.now().toIso8601String();
     
     // 1. 首先发送心跳请求
@@ -307,8 +291,6 @@ class SideController extends ChangeNotifier {
       'action': 'refresh_all_pages',
       'content': {
         'username': username,
-        'gameName': gameName,
-        'cardKey': cardKey,
         'updatedAt': now,
       }
     };

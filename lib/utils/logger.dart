@@ -252,12 +252,12 @@ class Logger {
       logMessage.write(' $colorCode-> $data$resetCode');
     }
     
-    // 输出日志
-    debugPrint(logMessage.toString());
+    // 输出日志 - 使用 print 而不是 debugPrint，确保在所有模式下都能显示
+    print(logMessage.toString());
     
     // 如果有堆栈信息，输出堆栈信息
     if (stackTrace != null) {
-      debugPrint('$colorCode堆栈信息: $stackTrace$resetCode');
+      print('$colorCode堆栈信息: $stackTrace$resetCode');
     }
   }
 }
