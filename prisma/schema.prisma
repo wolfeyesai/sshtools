@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// 超级管理员表（用户账号）
+// 说明：系统的核心用户表，存储所有用户的基本信息和认证数据
+// 特点：
+// 1. 每个用户名都是唯一的，作为主键
+// 2. 与其他所有配置表都是一对多的关系（一个用户可以有多个配置）
+// 3. 包含用户认证相关字段（密码、token）和时间跟踪
+// 关系示例：
+// 1. 一对一关系(SuperAdmin <-> HomeConfig)：
+//    用户: { username: "user1", password: "xxx" }
+//    对应的首页配置: { username: "user1", gameName: "CS:GO", cardKey: "XXXX-XXXX-XXXX-XXXX" }
+// 2. 一对多关系(SuperAdmin <-> FunctionConfig)：
+//    用户: { username: "user1", password: "xxx" }
+//    对应的多个功能配置:
+//      - { username: "user1", gameName: "CS:GO", presetName: "头部瞄准", aiMode: "自动" }
+//      - { username: "user1", gameName: "CS:GO", presetName: "胸部瞄准", aiMode: "手动" }
+//      - { username: "user1", gameName: "PUBG", presetName: "通用设置", aiMode: "自动" }
+model SuperAdmin {
+  username     String       @id @unique                  // 用户名 - 主键和唯一标识符 
+  password     String                                   // 密码
+  createdAt    DateTime     @default(now()) @map("created_at") // 创建时间
+  updatedAt    DateTime     @updatedAt @map("updated_at")      // 更新时间
+  lastLogin    DateTime?    @map("last_login")                 // 最后登录时间
+  token        String?      @db.Text                           // 认证令牌
+  
+  // 关联说明：一个用户可以拥有多个不同类型的配置
+  homeConfig   HomeConfig?                              // 首页配置（一对一）
+  functionConfigs FunctionConfig[]                      // 功能配置（一对多）
+  pidConfigs    PidConfig[]                             // PID配置（一对多）
+  aimConfigs    AimConfig[]                             // 瞄准配置（一对多）
+  fireConfigs   FireConfig[]                            // 射击配置（一对多）
+  fovConfigs    FovConfig[]                             // 视野配置（一对多）
+  dataCollections DataCollection[]                      // 数据收集（一对多）
+
+  @@map("admin_user")
+}
+
+// 功能配置表
+// 说明：此表支持同一用户(username)在不同游戏(game_name)下创建相同名称的预设(preset_name)
+// 关系示例(一对多)：
+// 用户user1的多个功能配置：
+// 1. CS:GO游戏的头部瞄准预设:
+//    { username: "user1", gameName: "CS:GO", presetName: "头部瞄准", aiMode: "自动", lockPosition: "头部" }
+// 2. CS:GO游戏的胸部瞄准预设:
+//    { username: "user1", gameName: "CS:GO", presetName: "胸部瞄准", aiMode: "手动", lockPosition: "胸部" }
+// 3. PUBG游戏的通用预设:
+//    { username: "user1", gameName: "PUBG", presetName: "通用设置", aiMode: "自动", lockPosition: "头部" }
+
+model FunctionConfig {
+  username      String                                  // 所属用户名
+  gameName      String       @map("game_name")          // 游戏名称(对应图中的game_id)
+  presetName    String       @map("preset_name")        // 配置名称
+  aiMode        String       @map("ai_mode")            // AI模式
+  lockPosition  String       @map("lock_position")      // 锁定位置(胸部/头部/颈部等)
+  hotkey        String?      @map("hotkey")             // 触发热键
+  triggerSwitch Boolean      @default(false) @map("trigger_switch")  // 自动扳机
+  enabled       Boolean      @default(true) @map("enabled")          // 启用状态
+  createdAt     DateTime     @default(now()) @map("created_at")     // 创建时间
+  updatedAt     DateTime     @updatedAt @map("updated_at")          // 更新时间
+  
+  // 关联说明：与SuperAdmin表建立一对多关系，一个用户可以有多个功能配置
+  // 当用户被删除时，该用户的所有功能配置也会被级联删除
+  superAdmin    SuperAdmin   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@id([username, gameName, presetName])  // 联合主键：用户名+游戏名+配置名
+  @@map("function_configs")
+}
+
+// PID控制器配置表
+// 说明：存储每个用户在不同游戏中的PID控制参数配置
+// 关系示例(一对多)：
+// 用户user1在不同游戏中的PID配置：
+// { username: "user1", gameName: "CS:GO", moveSpeed: 0.0, trackSpeed: 5.0, shakeSpeed: 3.0, deadZone: 4.0, moveTime: 10, integralLimit: 1.0 }
+// { username: "user1", gameName: "PUBG", moveSpeed: 0.0, trackSpeed: 5.0, shakeSpeed: 3.0, deadZone: 4.0, moveTime: 10, integralLimit: 1.0 }
+// { username: "user1", gameName: "APEX", moveSpeed: 0.0, trackSpeed: 5.0, shakeSpeed: 3.0, deadZone: 4.0, moveTime: 10, integralLimit: 1.0 }
+//
+// 用户user2在不同游戏中的PID配置：
+// { username: "user2", gameName: "CS:GO", moveSpeed: 0.0, trackSpeed: 5.0, shakeSpeed: 3.0, deadZone: 4.0, moveTime: 10, integralLimit: 1.0 }
+// { username: "user2", gameName: "VALORANT", moveSpeed: 0.0, trackSpeed: 5.0, shakeSpeed: 3.0, deadZone: 4.0, moveTime: 10, integralLimit: 1.0 }
+model PidConfig {
+  username      String                                  // 所属用户名
+  gameName      String       @map("game_name")          // 游戏名称
+  moveSpeed     Float        @default(0.000) @map("move_speed")         // 移动速度
+  trackSpeed    Float        @default(5.000) @map("track_speed")        // 跟踪速度
+  shakeSpeed    Float        @default(3.000) @map("shake_speed")        // 抖动力度
+  deadZone      Float        @default(4.000) @map("dead_zone")          // 死区大小
+  moveTime      Int          @default(10) @map("move_time")             // 移动时间(帧)
+  integralLimit Float        @default(1.000) @map("integral_limit")     // 积分限制
+  createdAt     DateTime     @default(now()) @map("created_at")     // 创建时间
+  updatedAt     DateTime     @updatedAt @map("updated_at")          // 更新时间
+  
+  // 关联说明：与SuperAdmin表建立一对多关系，级联删除
+  superAdmin    SuperAdmin   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@id([username, gameName])  // 联合主键：用户名+游戏名
+  @@map("pid_configs")
+}
+
+// 视野配置表
+// 说明：存储用户在不同游戏中的视野范围设置
+// 关系示例(一对多)：
+// 用户user1在不同游戏中的视野配置：
+// { username: "user1", gameName: "CS:GO", fov: 90.0, fovTime: 1000 }
+// { username: "user1", gameName: "PUBG", fov: 85.0, fovTime: 1200 }
+// { username: "user1", gameName: "APEX", fov: 95.0, fovTime: 800 }
+//
+// 用户user2在不同游戏中的视野配置：
+// { username: "user2", gameName: "VALORANT", fov: 88.0, fovTime: 900 }
+// { username: "user2", gameName: "CS:GO", fov: 92.0, fovTime: 1100 }
+model FovConfig {
+  username      String                                  // 所属用户名
+  gameName      String       @map("game_name")          // 游戏名称
+  fov           Float                                   // 视野范围
+  fovTime       Int          @map("fov_time")           // 视野时间
+  createdAt     DateTime     @default(now()) @map("created_at")     // 创建时间
+  updatedAt     DateTime     @updatedAt @map("updated_at")          // 更新时间
+  
+  // 关联说明：与SuperAdmin表建立一对多关系，级联删除
+  superAdmin    SuperAdmin   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@id([username, gameName])  // 联合主键：用户名+游戏名
+  @@map("fov_configs")
+}
+
+// 瞄准配置表
+// 说明：存储用户在不同游戏中的瞄准参数设置
+// 关系示例(一对多)：
+// 用户user1在不同游戏中的瞄准配置：
+// { username: "user1", gameName: "CS:GO", aimRange: 100.0, trackRange: 50.0, headHeight: 1.8, neckHeight: 1.6, chestHeight: 1.4 }
+// { username: "user1", gameName: "PUBG", aimRange: 150.0, trackRange: 70.0, headHeight: 1.9, neckHeight: 1.7, chestHeight: 1.5 }
+// { username: "user1", gameName: "APEX", aimRange: 120.0, trackRange: 60.0, headHeight: 1.7, neckHeight: 1.5, chestHeight: 1.3 }
+//
+// 用户user2在不同游戏中的瞄准配置：
+// { username: "user2", gameName: "VALORANT", aimRange: 90.0, trackRange: 45.0, headHeight: 1.75, neckHeight: 1.55, chestHeight: 1.35 }
+// { username: "user2", gameName: "CS:GO", aimRange: 110.0, trackRange: 55.0, headHeight: 1.85, neckHeight: 1.65, chestHeight: 1.45 }
+model AimConfig {
+  username      String                                  // 所属用户名
+  gameName      String       @map("game_name")          // 游戏名称
+  aimRange      Float        @map("aim_range")          // 瞄准范围
+  trackRange    Float        @map("track_range")        // 跟踪范围
+  headHeight    Float        @map("head_height")        // 头部高度
+  neckHeight    Float        @map("neck_height")        // 颈部高度
+  chestHeight   Float        @map("chest_height")       // 胸部高度
+  headRangeX    Float        @map("head_range_x")       // 头部X范围
+  headRangeY    Float        @map("head_range_y")       // 头部Y范围
+  neckRangeX    Float        @map("neck_range_x")       // 颈部X范围
+  neckRangeY    Float        @map("neck_range_y")       // 颈部Y范围
+  chestRangeX   Float        @map("chest_range_x")      // 胸部X范围
+  chestRangeY   Float        @map("chest_range_y")      // 胸部Y范围
+  createdAt     DateTime     @default(now()) @map("created_at")     // 创建时间
+  updatedAt     DateTime     @updatedAt @map("updated_at")          // 更新时间
+  
+  // 关联说明：与SuperAdmin表建立一对多关系，级联删除
+  superAdmin    SuperAdmin   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@id([username, gameName])  // 联合主键：用户名+游戏名
+  @@map("aim_configs")
+}
+
+// 射击配置表
+// 说明：存储用户在不同游戏中的射击参数设置
+// 关系示例(一对多)：
+// 用户user1在不同游戏中的射击配置：
+// { username: "user1", gameName: "CS:GO", rifleSleep: 100, rifleInterval: 200, pistolSleep: 150, pistolInterval: 250, sniperSleep: 300, sniperInterval: 500 }
+// { username: "user1", gameName: "PUBG", rifleSleep: 120, rifleInterval: 220, pistolSleep: 170, pistolInterval: 270, sniperSleep: 320, sniperInterval: 520 }
+// { username: "user1", gameName: "APEX", rifleSleep: 90, rifleInterval: 180, pistolSleep: 140, pistolInterval: 240, sniperSleep: 280, sniperInterval: 480 }
+//
+// 用户user2在不同游戏中的射击配置：
+// { username: "user2", gameName: "VALORANT", rifleSleep: 110, rifleInterval: 210, pistolSleep: 160, pistolInterval: 260, sniperSleep: 310, sniperInterval: 510 }
+// { username: "user2", gameName: "CS:GO", rifleSleep: 95, rifleInterval: 190, pistolSleep: 145, pistolInterval: 245, sniperSleep: 290, sniperInterval: 490 }
+model FireConfig {
+  username       String                                 // 所属用户名
+  gameName       String       @map("game_name")         // 游戏名称
+  rifleSleep     Int          @map("rifle_sleep")       // 步枪休眠
+  rifleInterval  Int          @map("rifle_interval")    // 步枪间隔
+  pistolSleep    Int          @map("pistol_sleep")      // 手枪休眠
+  pistolInterval Int          @map("pistol_interval")   // 手枪间隔
+  sniperSleep    Int          @map("sniper_sleep")      // 狙击休眠
+  sniperInterval Int          @map("sniper_interval")   // 狙击间隔
+  createdAt      DateTime     @default(now()) @map("created_at")     // 创建时间
+  updatedAt      DateTime     @updatedAt @map("updated_at")          // 更新时间
+  
+  // 关联说明：与SuperAdmin表建立一对多关系，级联删除
+  superAdmin     SuperAdmin   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@id([username, gameName])  // 联合主键：用户名+游戏名
+  @@map("fire_configs")
+}
+
+// 超级管理员首页配置表
+// 说明：存储用户的首页个性化设置
+// 关系示例(一对一)：
+// 1. user1的首页配置：
+//    用户: { username: "user1", password: "xxx" }
+//    首页配置: { username: "user1", gameName: "CS:GO", cardKey: "AAAA-BBBB-CCCC" }
+// 2. user2的首页配置：
+//    用户: { username: "user2", password: "yyy" }
+//    首页配置: { username: "user2", gameName: "PUBG", cardKey: "DDDD-EEEE-FFFF" }
+// 注意：一个用户只能有一个首页配置，删除用户时配置也会被删除
+model HomeConfig {
+  username     String   @id @map("username")  // 超级管理员用户名
+  gameName     String   @map("game_name")     // 游戏名称
+  cardKey            String?  @map("card_key")             // 卡密
+  createdAt          DateTime @default(now()) @map("created_at")     // 创建时间
+  updatedAt          DateTime @updatedAt @map("updated_at")          // 更新时间
+  
+  // 关联说明：与SuperAdmin表建立一对一关系，级联删除
+  superAdmin         SuperAdmin @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@map("home_configs")
+}
+
+// 数据收集表
+// 说明：用于系统数据收集和分析的基础表
+// 关系示例(一对多)：
+// 用户user1的数据记录：
+// { username: "user1", gameName: "CS:GO", createdAt: "2024-03-15T10:30:00Z", updatedAt: "2024-03-15T10:30:00Z" }
+// { username: "user1", gameName: "PUBG", createdAt: "2024-03-15T11:30:00Z", updatedAt: "2024-03-15T11:30:00Z" }
+model DataCollection {
+  username     String                                   // 所属用户名
+  gameName     String       @map("game_name")          // 游戏名称
+  createdAt    DateTime     @default(now()) @map("created_at")     // 创建时间
+  updatedAt    DateTime     @updatedAt @map("updated_at")          // 更新时间
+
+  // 关联说明：与SuperAdmin表建立一对多关系，级联删除
+  superAdmin    SuperAdmin   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@id([username, gameName])  // 联合主键：用户名+游戏名称
+  @@map("data_collections")
+}
