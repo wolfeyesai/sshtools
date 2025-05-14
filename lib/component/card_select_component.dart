@@ -69,15 +69,6 @@ class _CardSelectComponentState extends State<CardSelectComponent> {
     super.initState();
     _selectedCardId = widget.initialSelectedId;
   }
-  
-  @override
-  void didUpdateWidget(CardSelectComponent oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 检查initialSelectedId是否有变化，如果有则更新选中状态
-    if (oldWidget.initialSelectedId != widget.initialSelectedId) {
-      _selectedCardId = widget.initialSelectedId;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {

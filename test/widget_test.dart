@@ -7,44 +7,24 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:blui/main.dart';
-import 'package:blui/models/auth_model.dart';
-import 'package:blui/models/device_model.dart';
-import 'package:blui/models/login_model.dart';
-import 'package:blui/models/settings_model.dart';
-import 'package:blui/models/ui_config_model.dart';
-import 'package:blui/services/ssh_service.dart';
+import 'package:pid_config/main.dart';
 
 void main() {
-  testWidgets('应用初始化测试', (WidgetTester tester) async {
-    // 初始化SharedPreferences模拟
-    SharedPreferences.setMockInitialValues({});
-    final sharedPreferences = await SharedPreferences.getInstance();
-    
-    // 初始化所需的模型
-    final authModel = AuthModel();
-    final deviceModel = DeviceModel();
-    final loginModel = LoginModel();
-    final uiConfigModel = UIConfigModel();
-    final settingsModel = SettingsModel();
-    final sshService = SshService(settingsModel: settingsModel);
-    
-    // 构建应用并触发一帧
-    await tester.pumpWidget(Builder(
-      builder: (context) => MyApp(
-        sharedPreferences: sharedPreferences,
-        authModel: authModel,
-        deviceModel: deviceModel,
-        loginModel: loginModel,
-        uiConfigModel: uiConfigModel,
-        settingsModel: settingsModel,
-        sshService: sshService,
-      ),
-    ));
-    
-    // 验证应用已经初始化
-    expect(find.byType(MaterialApp), findsOneWidget);
+  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+    // Build our app and trigger a frame.
+    await tester.pumpWidget(const MyApp());
+
+    // Verify that our counter starts at 0.
+    expect(find.text('0'), findsOneWidget);
+    expect(find.text('1'), findsNothing);
+
+    // Tap the '+' icon and trigger a frame.
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pump();
+
+    // Verify that our counter has incremented.
+    expect(find.text('0'), findsNothing);
+    expect(find.text('1'), findsOneWidget);
   });
 }

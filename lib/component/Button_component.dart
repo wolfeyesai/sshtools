@@ -1,4 +1,4 @@
-// ignore_for_file: file_names, library_private_types_in_public_api, unreachable_switch_default, unused_local_variable, avoid_unnecessary_containers, deprecated_member_use, use_super_parameters
+// ignore_for_file: file_names, library_private_types_in_public_api, unreachable_switch_default, unused_local_variable, avoid_unnecessary_containers, deprecated_member_use
 
 import 'package:flutter/material.dart';
 import 'package:getwidget/getwidget.dart';
@@ -14,6 +14,7 @@ enum ButtonType {
   success,    // 成功按钮
   info,       // 信息按钮
   disabled,   // 禁用按钮
+  custom,     // 自定义按钮
 }
 
 /// 按钮尺寸枚举
@@ -30,66 +31,6 @@ enum ButtonShape {
   circle,     // 圆形
 }
 
-/// 动画按钮组件
-/// 用于显示加载动画的按钮
-class AnimatedButton extends StatefulWidget {
-  final ButtonType type;
-  final String label;
-  final VoidCallback onPressed;
-  final ButtonSize size;
-  final ButtonShape shape;
-  final Icon? icon;
-  final bool fullWidth;
-  final double elevation;
-  final Color? textColor;
-  final Color? backgroundColor;
-  final Color? borderColor;
-  final double borderWidth;
-  final bool isLoading;
-  
-  const AnimatedButton({
-    Key? key,
-    this.type = ButtonType.standard,
-    required this.label,
-    required this.onPressed,
-    this.size = ButtonSize.medium,
-    this.shape = ButtonShape.standard,
-    this.icon,
-    this.fullWidth = false,
-    this.elevation = 0,
-    this.textColor,
-    this.backgroundColor,
-    this.borderColor,
-    this.borderWidth = 1.0,
-    this.isLoading = false,
-  }) : super(key: key);
-  
-  @override
-  _AnimatedButtonState createState() => _AnimatedButtonState();
-}
-
-class _AnimatedButtonState extends State<AnimatedButton> {
-  @override
-  Widget build(BuildContext context) {
-    return ButtonComponent.create(
-      type: widget.isLoading ? ButtonType.disabled : widget.type,
-      label: widget.isLoading ? '处理中...' : widget.label,
-      onPressed: widget.isLoading ? null : widget.onPressed,
-      size: widget.size,
-      shape: widget.shape,
-      icon: widget.isLoading 
-          ? const Icon(Icons.hourglass_empty)
-          : widget.icon,
-      fullWidth: widget.fullWidth,
-      elevation: widget.elevation,
-      textColor: widget.textColor,
-      backgroundColor: widget.backgroundColor,
-      borderColor: widget.borderColor,
-      borderWidth: widget.borderWidth,
-    );
-  }
-}
-
 /// 按钮组件类
 /// 提供基于GetWidget库的按钮功能
 class ButtonComponent {
@@ -104,6 +45,7 @@ class ButtonComponent {
     ButtonType.info: Colors.lightBlue,
     ButtonType.outline: Colors.blue,
     ButtonType.disabled: Colors.grey.shade300,
+    ButtonType.custom: Colors.indigo,
   };
 
   // 按钮默认文本颜色映射表
@@ -117,6 +59,7 @@ class ButtonComponent {
     ButtonType.info: Colors.white,
     ButtonType.outline: Colors.blue,
     ButtonType.disabled: Colors.grey.shade700,
+    ButtonType.custom: Colors.white,
   };
 
   /// 创建按钮
@@ -280,142 +223,9 @@ class ButtonComponent {
       case ButtonType.danger:
       case ButtonType.success:
       case ButtonType.info:
+      case ButtonType.custom:
       default:
         return GFButtonType.solid;
     }
   }
 }
-
-/// 按钮使用示例
-/// 
-/// 1. 创建基本按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.primary,
-///   label: '登录',
-///   onPressed: () {
-///     print('按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 2. 创建带图标的按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.success,
-///   label: '保存',
-///   icon: const Icon(Icons.save),
-///   onPressed: () {
-///     print('保存按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 3. 创建全宽按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.primary,
-///   label: '下一步',
-///   fullWidth: true,
-///   onPressed: () {
-///     print('下一步按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 4. 创建轮廓按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.outline,
-///   label: '取消',
-///   onPressed: () {
-///     print('取消按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 5. 创建药丸形按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.info,
-///   label: '信息',
-///   shape: ButtonShape.pill,
-///   onPressed: () {
-///     print('信息按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 6. 创建圆形图标按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.primary,
-///   label: '', // 圆形按钮不显示文本
-///   shape: ButtonShape.circle,
-///   icon: const Icon(Icons.add),
-///   onPressed: () {
-///     print('添加按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 7. 创建禁用按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.disabled,
-///   label: '提交',
-///   onPressed: () {
-///     // 禁用状态下不会触发
-///     print('提交按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 8. 创建自定义颜色的按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.standard,
-///   label: '自定义',
-///   backgroundColor: Colors.purple,
-///   textColor: Colors.white,
-///   onPressed: () {
-///     print('自定义按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 9. 创建带阴影的按钮
-/// ```dart
-/// ButtonComponent.create(
-///   type: ButtonType.primary,
-///   label: '确认',
-///   elevation: 4.0,
-///   onPressed: () {
-///     print('确认按钮被点击');
-///   },
-/// );
-/// ```
-/// 
-/// 10. 在表单中使用按钮
-/// ```dart
-/// Form(
-///   key: _formKey,
-///   child: Column(
-///     children: [
-///       // 表单字段...
-///       const SizedBox(height: 24),
-///       ButtonComponent.create(
-///         type: ButtonType.primary,
-///         label: '提交表单',
-///         fullWidth: true,
-///         onPressed: () {
-///           if (_formKey.currentState?.validate() ?? false) {
-///             // 表单验证通过
-///             print('表单提交');
-///           }
-///         },
-///       ),
-///     ],
-///   ),
-/// );
-/// ```

@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "blui" "\0"
+            VALUE "FileDescription", "sshtools" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "blui" "\0"
+            VALUE "InternalName", "sshtools" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "blui.exe" "\0"
-            VALUE "ProductName", "blui" "\0"
+            VALUE "OriginalFilename", "sshtools.exe" "\0"
+            VALUE "ProductName", "sshtools" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

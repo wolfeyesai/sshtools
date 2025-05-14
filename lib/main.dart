@@ -1,257 +1,284 @@
-// ignore_for_file: use_super_parameters, library_private_types_in_public_api, unused_import, sort_child_properties_last, unnecessary_null_comparison, unused_local_variable
+// ignore_for_file: unused_import, unnecessary_import
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
+import 'dart:ui' show PlatformDispatcher;
+import 'views/sidebar_screen.dart';
+import 'views/ip_screen.dart';
+import 'providers/sidebar_provider.dart';
+import 'controllers/ssh_controller.dart';
+import 'controllers/ssh_command_controller.dart';
+import 'controllers/ssh_session_controller.dart';
+import 'controllers/ip_controller.dart';
+import 'component/ssh_command_edit_dialog.dart';
+import 'component/message_component.dart';
 
-// 视图导入
-import 'views/login_screen.dart';
-import 'views/register_screen.dart';
-import 'views/layout_screen.dart'; // 导入 MainLayout 所在的文件
-import 'views/home_screen.dart';
-import 'views/device_screen.dart';
-import 'views/terminal_screen.dart';
-import 'views/settings_screen.dart';
-// import 'views/pid_screen.dart'; // 根据项目结构文档，PID页面可能保留，暂时注释导入
-
-// 模型导入
-import 'models/auth_model.dart';
-import 'models/login_model.dart';
-import 'models/ui_config_model.dart';
-import 'models/status_bar_model.dart'; // 根据项目结构文档，状态栏模型可能不再需要，暂时保留
-
-// 新增SSH相关模型导入
-import 'models/device_model.dart';
-import 'models/terminal_model.dart';
-import 'models/settings_model.dart';
-// import 'models/pid_model.dart'; // 根据项目结构文档，PID模型可能保留，暂时注释导入
-
-// 控制器/服务导入
-import 'services/auth_service.dart';
-import 'services/ssh_service.dart'; // 导入 SSHService
-import 'controllers/header_controller.dart';
-import 'controllers/login_controller.dart';
-import 'controllers/register_controller.dart'; // 导入 RegisterController
-import 'controllers/home_controller.dart'; // 导入 HomeController
-// import 'controllers/pid_controller.dart'; // 根据项目结构文档，PID控制器可能保留，暂时注释导入
-
-// 新增SSH相关控制器导入
-import 'controllers/device_controller.dart';
-import 'controllers/terminal_controller.dart';
-import 'controllers/settings_controller.dart';
-
-import './utils/logger.dart';
-
-// 定义路由名称常量
-class Routes {
-  static const String login = '/login';
-  static const String register = '/register';
-  static const String main = '/main';
-  static const String home = '/home';
-  static const String device = '/device';
-  static const String terminal = '/terminal';
-  static const String settings = '/settings';
+/// 自定义导航观察器，处理潜在的导航问题
+class CustomNavigatorObserver extends NavigatorObserver {
+  /// 最后一次路由变化时间
+  DateTime? _lastRouteTime;
+  
+  /// 是否正在执行路由操作
+  bool _isNavigating = false;
+  
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _setNavigating();
+    super.didPush(route, previousRoute);
+  }
+  
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _setNavigating();
+    super.didPop(route, previousRoute);
+  }
+  
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _setNavigating();
+    super.didRemove(route, previousRoute);
+  }
+  
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _setNavigating();
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+  }
+  
+  /// 设置正在导航状态
+  void _setNavigating() {
+    _isNavigating = true;
+    _lastRouteTime = DateTime.now();
+    
+    // 300毫秒后重置导航状态
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _isNavigating = false;
+    });
+  }
+  
+  /// 检查是否可以安全地执行另一个导航操作
+  bool canNavigate() {
+    if (_isNavigating) return false;
+    
+    final now = DateTime.now();
+    if (_lastRouteTime != null) {
+      final diff = now.difference(_lastRouteTime!).inMilliseconds;
+      if (diff < 300) return false;
+    }
+    
+    return true;
+  }
 }
 
 void main() async {
+  // 确保Flutter已初始化
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 初始化日志
-  final logger = Logger();
-  logger.setLogLevel(LogLevel.debug); // 设置日志级别为 debug，显示所有日志
-  logger.enableLogs(true); // 启用日志
-  logger.enableLogsInRelease(true); // 在发布模式下也启用日志
-  logger.showFileInfo(true); // 显示文件信息
+  // 处理键盘错误
+  FlutterError.onError = (FlutterErrorDetails details) {
+    // 捕获并忽略键盘事件相关的错误
+    if (details.exception.toString().contains('hardware_keyboard') &&
+        details.exception.toString().contains('key is already pressed')) {
+      // 忽略这个错误
+      return;
+    }
+    
+    // 捕获Caps Lock键盘事件错误
+    if (details.exception.toString().contains('Attempted to send a key down event when no keys are in keysPressed') ||
+        details.exception.toString().contains('Caps Lock') ||
+        details.exception.toString().contains('event is! RawKeyDownEvent || _keysPressed.isNotEmpty')) {
+      // 忽略Caps Lock键盘事件错误
+      debugPrint('捕获到Caps Lock键盘事件错误: ${details.exception}');
+      return;
+    }
+    
+    // 捕获JSON解析错误
+    if (details.exception.toString().contains('Unable to parse JSON message') ||
+        details.exception.toString().contains('The document is empty')) {
+      // 忽略JSON解析错误
+      debugPrint('捕获到JSON解析错误: ${details.exception}');
+      return;
+    }
+    
+    // 捕获平台消息调度错误
+    if (details.exception.toString().contains('PlatformDispatcher._dispatchPlatformMessage') ||
+        details.exception.toString().contains('channel_buffers.dart') ||
+        details.exception.toString().contains('_dispatchPlatformMessage')) {
+      // 忽略平台消息调度错误
+      debugPrint('捕获到平台消息调度错误: ${details.exception}');
+      return;
+    }
+    
+    // 捕获UI构建和状态错误
+    if (details.exception.toString().contains('setState') ||
+        details.exception.toString().contains('build') ||
+        details.exception.toString().contains('performRebuild') ||
+        details.exception.toString().contains('notifyListeners') ||
+        details.exception.toString().contains('sending notification') ||
+        details.exception.toString().contains('was:') ||
+        details.exception.toString().contains('setState() called')) {
+      // 忽略UI构建和状态错误
+      debugPrint('捕获到UI构建或状态错误: ${details.exception}');
+      return;
+    }
+    
+    // 捕获文本渲染相关的错误
+    if (details.exception.toString().contains('TextSpan') ||
+        details.exception.toString().contains('text span') ||
+        details.exception.toString().contains('renderObject')) {
+      // 记录错误但继续运行应用
+      debugPrint('捕获到文本渲染错误: ${details.exception}');
+      return;
+    }
+    
+    // 处理其他错误
+    FlutterError.presentError(details);
+  };
   
-  logger.i('Main', '应用启动');
+  // 设置全局未捕获异常处理器
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('捕获到全局未处理异常: $error');
+    debugPrint('堆栈跟踪: $stack');
+    // 返回true表示异常已处理
+    return true;
+  };
   
-  final sharedPreferences = await SharedPreferences.getInstance();
+  // 创建和预初始化控制器
+  final commandController = SSHCommandController();
+  final sessionController = SSHSessionController();
   
-  final authModel = AuthModel();
-  await authModel.loadAuthState();
+  // 初始化控制器
+  debugPrint('应用启动: 开始初始化SSH命令和会话控制器...');
+  await commandController.init();
+  await sessionController.init();
+  debugPrint('应用启动: 命令控制器加载了 ${commandController.commandCount} 个命令');
+  debugPrint('应用启动: 会话控制器加载了 ${sessionController.sessionCount} 个会话');
   
-  final loginModel = LoginModel();
-  final uiConfigModel = UIConfigModel();
-  
-  // 确保 settingsModel 被正确初始化
-  final settingsModel = SettingsModel();
-  await settingsModel.loadSettings();
-
-  final deviceModel = DeviceModel();
-  final sshService = SshService(settingsModel: settingsModel);
-
-  // 使用 builder 模式确保所有参数被正确传递
-  runApp(Builder(
-    builder: (context) => MyApp(
-      sharedPreferences: sharedPreferences,
-      authModel: authModel,
-      loginModel: loginModel,
-      uiConfigModel: uiConfigModel,
-      settingsModel: settingsModel,
-      deviceModel: deviceModel,
-      sshService: sshService,
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => SidebarProvider()),
+        ChangeNotifierProvider(create: (_) => SSHController()),
+        ChangeNotifierProvider.value(value: commandController),
+        ChangeNotifierProvider.value(value: sessionController),
+        ChangeNotifierProvider(create: (_) => IPController()),
+      ],
+      child: const MyApp(),
     ),
-  ));
+  );
 }
 
+// 创建全局导航观察器实例
+final navigatorObserver = CustomNavigatorObserver();
+
 class MyApp extends StatelessWidget {
-  final SharedPreferences sharedPreferences;
-  final AuthModel authModel;
-  final LoginModel loginModel;
-  final UIConfigModel uiConfigModel;
-  final SettingsModel settingsModel;
-  final DeviceModel deviceModel;
-  final SshService sshService;
-  
-  const MyApp({
-    Key? key, 
-    required this.sharedPreferences,
-    required this.authModel,
-    required this.loginModel,
-    required this.uiConfigModel,
-    required this.settingsModel,
-    required this.deviceModel,
-    required this.sshService,
-  }) : super(key: key);
+  // ignore: use_super_parameters
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    log.i('Main', '应用的根Widget');
-    return MultiProvider(
-      providers: [
-        // 核心服务
-        Provider<SharedPreferences>.value(value: sharedPreferences),
-        ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProvider.value(value: sshService),
-        
-        // 数据模型
-        ChangeNotifierProvider.value(value: authModel),
-        ChangeNotifierProvider.value(value: loginModel),
-        ChangeNotifierProvider.value(value: uiConfigModel),
-        ChangeNotifierProvider.value(value: settingsModel),
-        ChangeNotifierProvider.value(value: deviceModel),
-        ChangeNotifierProvider(create: (_) => TerminalModel()),
-
-        // 控制器
-        ChangeNotifierProxyProvider2<AuthService, LoginModel, RegisterController>(
-          create: (context) => RegisterController(
-            authService: Provider.of<AuthService>(context, listen: false),
-            loginModel: Provider.of<LoginModel>(context, listen: false),
+    return MaterialApp(
+        title: 'SSHTools',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.light,
           ),
-          update: (context, authService, loginModel, previous) => previous ?? RegisterController(authService: authService, loginModel: loginModel),
-        ),
-
-        // LoginController 移除 GameModel 依赖
-        ChangeNotifierProxyProvider3<AuthService, AuthModel, LoginModel, LoginController>(
-          create: (context) => LoginController(
-            authService: Provider.of<AuthService>(context, listen: false),
-            authModel: Provider.of<AuthModel>(context, listen: false),
-            loginModel: Provider.of<LoginModel>(context, listen: false),
+          useMaterial3: true,
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.white,
+            indicatorColor: Colors.blue.shade100,
           ),
-          update: (context, authService, authModel, loginModel, previous) {
-             if (previous == null) {
-              return LoginController(
-                authService: authService,
-                authModel: authModel,
-                loginModel: loginModel,
-              );
-            }
-            return previous!;
-          },
         ),
-
-        // DeviceController 依赖 DeviceModel
-        ChangeNotifierProxyProvider<DeviceModel, DeviceController>(
-          create: (context) => DeviceController(
-            Provider.of<DeviceModel>(context, listen: false)
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
           ),
-          update: (context, deviceModel, previous) {
-            if (previous == null) {
-              return DeviceController(deviceModel);
-            }
-            return previous;
-          },
-        ),
-
-        // TerminalController 依赖 TerminalModel 和 SshService
-        ChangeNotifierProxyProvider2<TerminalModel, SshService, TerminalController>(
-           create: (context) => TerminalController(
-             Provider.of<TerminalModel>(context, listen: false),
-             Provider.of<SshService>(context, listen: false),
-           ),
-           update: (context, terminalModel, sshService, previous) => previous ?? TerminalController(terminalModel, sshService),
-        ),
-
-        // SettingsController 依赖 SettingsModel
-        ChangeNotifierProxyProvider<SettingsModel, SettingsController>(
-          create: (context) => SettingsController(Provider.of<SettingsModel>(context, listen: false)),
-          update: (context, settingsModel, previous) => previous ?? SettingsController(settingsModel),
-        ),
-
-        // HomeController 依赖 DeviceModel 和 SshService
-        ChangeNotifierProxyProvider2<DeviceModel, SshService, HomeController>(
-          create: (context) => HomeController(
-            deviceModel: Provider.of<DeviceModel>(context, listen: false),
-            sshService: Provider.of<SshService>(context, listen: false),
+          useMaterial3: true,
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.grey.shade900,
+            indicatorColor: Colors.blue.shade900,
           ),
-          update: (context, deviceModel, sshService, previous) => previous ?? HomeController(deviceModel: deviceModel, sshService: sshService),
         ),
+        navigatorObservers: [navigatorObserver],
+        themeMode: ThemeMode.system,
+        home: const HomeWrapper(),
+    );
+  }
+}
 
-         // HeaderController 依赖 AuthModel, SshService
-         ChangeNotifierProxyProvider2<AuthModel, SshService, HeaderController>(
-           create: (context) => HeaderController(
-             authModel: Provider.of<AuthModel>(context, listen: false),
-             sshService: Provider.of<SshService>(context, listen: false),
-           ),
-           update: (context, authModel, sshService, previous) => previous ?? HeaderController(authModel: authModel, sshService: sshService),
-         ),
+/// 主页包装器
+class HomeWrapper extends StatelessWidget {
+  const HomeWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // 使用已存在的SidebarProvider实例
+    // ignore: unused_local_variable
+    final sidebarProvider = Provider.of<SidebarProvider>(context);
+    
+    // 只需要传递IP页面，终端页面将由SidebarProvider动态管理
+    return SidebarScreen(
+      pageList: [
+        IPPage(), // IP搜索页面作为首页
       ],
-      child: Consumer<UIConfigModel>(
-        builder: (context, uiConfig, child) {
-          return MaterialApp(
-            title: 'SSH Tool',
-            debugShowCheckedModeBanner: false,
-            theme: ThemeData(
-              primarySwatch: Colors.blue,
-              textTheme: uiConfig.useGoogleFonts 
-                  ? uiConfig.getTextTheme(Theme.of(context).textTheme)
-                  : Theme.of(context).textTheme,
-              visualDensity: VisualDensity.adaptivePlatformDensity,
+      isBottom: true,
+    );
+  }
+}
+
+/// 空终端页面 - 显示在用户选择连接之前
+class EmptyTerminalPage extends StatelessWidget {
+  const EmptyTerminalPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('SSH终端'),
+        elevation: 2,
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.terminal,
+              size: 80,
+              color: Colors.grey,
             ),
-            // 根据登录状态决定初始路由
-            initialRoute: authModel.isAuthenticated ? Routes.main : Routes.login,
-            // 定义路由
-            routes: {
-              Routes.login: (context) => LoginScreen(
-                onLoginSuccess: () => Navigator.pushReplacementNamed(context, Routes.main),
-                onRegister: () => Navigator.pushNamed(context, Routes.register),
+            const SizedBox(height: 24),
+            const Text(
+              '无活动终端连接',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
-              Routes.register: (context) => RegisterScreen(
-                onRegisterSuccess: () => Navigator.pushReplacementNamed(context, Routes.login),
-                onBackToLogin: () => Navigator.pop(context),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '请在IP管理页面选择设备以创建SSH连接',
+              style: TextStyle(
+                color: Colors.grey,
               ),
-              Routes.main: (context) => MainLayout(
-                onLogout: () {
-                  authModel.logout();
-                  Navigator.pushReplacementNamed(context, Routes.login);
-                },
-                onRefreshSystem: () {
-                  // 刷新系统逻辑
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('系统刷新中...'))
-                  );
-                },
-                onRefreshData: () {
-                  // 刷新数据逻辑
-                },
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                // 切换到IP页面
+                Provider.of<SidebarProvider>(context, listen: false).setIndex(0);
+              },
+              icon: const Icon(Icons.search),
+              label: const Text('查找设备'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
-              Routes.home: (context) => HomeScreen(),
-              Routes.device: (context) => DeviceScreen(),
-              Routes.terminal: (context) => TerminalScreen(),
-              Routes.settings: (context) => SettingsScreen(),
-            },
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }

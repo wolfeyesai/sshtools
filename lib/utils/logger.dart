@@ -38,9 +38,6 @@ class Logger {
   /// 是否显示文件名和行号
   bool _showFileInfo = true;
   
-  /// 是否使用简化文件路径（只显示文件名而不是完整路径）
-  bool _useShortFilePath = true;
-  
   /// 日期格式
   final DateFormat _dateFormat = DateFormat('HH:mm:ss.SSS');
   
@@ -72,11 +69,6 @@ class Logger {
     _showFileInfo = show;
   }
   
-  /// 设置是否使用简化文件路径
-  void useShortFilePath(bool useShort) {
-    _useShortFilePath = useShort;
-  }
-  
   /// 记录调试级别日志
   void d(String tag, String message, [dynamic data]) {
     _log(LogLevel.debug, tag, message, data);
@@ -102,26 +94,6 @@ class Logger {
     _log(LogLevel.fatal, tag, message, data, stackTrace);
   }
   
-  /// 打印当前堆栈跟踪，用于调试
-  void printStackTrace(String tag, [String message = '当前堆栈跟踪']) {
-    final stackTrace = StackTrace.current;
-    final frames = stackTrace.toString().split('\n');
-    
-    // 记录信息级别日志
-    i(tag, message);
-    
-    // 只输出前10个堆栈帧
-    final framesToShow = frames.length > 10 ? 10 : frames.length;
-    
-    for (int i = 0; i < framesToShow; i++) {
-      final frame = frames[i].trim();
-      if (frame.isNotEmpty) {
-        // 以调试级别输出堆栈帧
-        d(tag, '堆栈帧 #$i', frame);
-      }
-    }
-  }
-  
   /// 获取当前调用的文件信息
   String _getCallerInfo() {
     try {
@@ -129,59 +101,21 @@ class Logger {
       final frames = stackTrace.toString().split('\n');
       
       // 跳过前几个堆栈帧，这些是Logger类内部的调用
-      // 需要找到第一个非Logger类的调用
-      int frameIndex = 0;
-      for (int i = 0; i < frames.length; i++) {
-        // 跳过Logger内部调用
-        if (!frames[i].contains('logger.dart') && !frames[i].contains('_log') && i > 2) {
-          frameIndex = i;
-          break;
-        }
-      }
-      
-      if (frameIndex > 0 && frameIndex < frames.length) {
-        final callerFrame = frames[frameIndex];
+      // 通常第4个帧是实际调用日志方法的地方
+      if (frames.length > 3) {
+        final callerFrame = frames[3];
         
-        // 尝试不同的正则表达式匹配格式
-        var match = RegExp(r'package:(.*):(\d+):(\d+)\)').firstMatch(callerFrame);
+        // 解析文件名和行号
+        // 格式通常是：#3      main (package:pid_config/main.dart:7:17)
+        final match = RegExp(r'package:(.*):(\d+):(\d+)\)').firstMatch(callerFrame);
         if (match != null && match.groupCount >= 2) {
           final filePath = match.group(1);
           final lineNumber = match.group(2);
-          
-          if (_useShortFilePath && filePath != null) {
-            // 只使用文件名而不是完整路径
-            final fileName = filePath.split('/').last;
-            return '$fileName:$lineNumber';
-          }
-          
           return '$filePath:$lineNumber';
-        }
-        
-        // 尝试匹配Flutter引擎生成的堆栈跟踪格式
-        match = RegExp(r'\((.+?):(\d+):(\d+)\)').firstMatch(callerFrame);
-        if (match != null && match.groupCount >= 2) {
-          final filePath = match.group(1);
-          final lineNumber = match.group(2);
-          
-          if (_useShortFilePath && filePath != null) {
-            // 只使用文件名而不是完整路径
-            final fileName = filePath.split('/').last;
-            return '$fileName:$lineNumber';
-          }
-          
-          return '$filePath:$lineNumber';
-        }
-        
-        // 尝试从整行提取有用信息
-        final parts = callerFrame.trim().split(' ');
-        if (parts.length > 1) {
-          // 可能是方法名或类名
-          return parts.last;
         }
       }
     } catch (e) {
-      // 如果解析失败，返回异常信息
-      return 'parser_error: ${e.toString()}';
+      // 如果解析失败，忽略错误
     }
     
     return '未知位置';
@@ -252,12 +186,12 @@ class Logger {
       logMessage.write(' $colorCode-> $data$resetCode');
     }
     
-    // 输出日志 - 使用 print 而不是 debugPrint，确保在所有模式下都能显示
-    print(logMessage.toString());
+    // 输出日志
+    debugPrint(logMessage.toString());
     
     // 如果有堆栈信息，输出堆栈信息
     if (stackTrace != null) {
-      print('$colorCode堆栈信息: $stackTrace$resetCode');
+      debugPrint('$colorCode堆栈信息: $stackTrace$resetCode');
     }
   }
 }
