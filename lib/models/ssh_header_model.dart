@@ -1,3 +1,5 @@
+// ignore_for_file: use_super_parameters
+
 import 'package:flutter/foundation.dart';
 
 /// SSH页头模型，管理SSH终端页面的页头状态
@@ -5,7 +7,7 @@ class SSHHeaderModel extends ChangeNotifier {
   /// 页面标题
   String _title = '';
   
-  /// 按钮启用状态
+  /// 按钮启用状态 - 默认始终启用，不再依赖连接状态
   bool _isFileUploadEnabled = true;
   bool _isFileDownloadEnabled = true;
   
@@ -46,11 +48,11 @@ class SSHHeaderModel extends ChangeNotifier {
     }
   }
   
-  /// 文件上传按钮是否启用
-  bool get isFileUploadEnabled => _isFileUploadEnabled && _isConnected;
+  /// 文件上传按钮是否启用 - 默认一直启用，不再依赖连接状态
+  bool get isFileUploadEnabled => _isFileUploadEnabled;
   
-  /// 文件下载按钮是否启用
-  bool get isFileDownloadEnabled => _isFileDownloadEnabled && _isConnected;
+  /// 文件下载按钮是否启用 - 默认一直启用，不再依赖连接状态
+  bool get isFileDownloadEnabled => _isFileDownloadEnabled;
   
   /// 获取是否显示调试信息
   bool get showDebugInfo => _showDebugInfo;

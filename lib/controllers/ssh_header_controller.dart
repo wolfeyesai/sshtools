@@ -12,6 +12,7 @@ import '../controllers/ssh_controller.dart';
 import '../component/message_component.dart';
 import '../component/ssh_file_uploader.dart';
 import '../component/ssh_file_downloader.dart';
+import '../component/ssh_multi_terminal.dart';
 
 /// SSH页头控制器，用于管理SSH页头的业务逻辑
 class SSHHeaderController extends ChangeNotifier {
@@ -58,8 +59,18 @@ class SSHHeaderController extends ChangeNotifier {
   void _handleConnectionStateChange(SSHConnectionState state) {
     if (_isDisposed) return;
     
-    // 更新模型中的连接状态
-    _model.isConnected = state == SSHConnectionState.connected;
+    // 只更新连接状态，不影响按钮的启用状态
+    final bool isConnected = state == SSHConnectionState.connected;
+    
+    // 记录连接状态变化，但不用它来控制UI元素
+    debugPrint('SSH连接状态变化: $state (isConnected: $isConnected)');
+    
+    // 更新模型中的连接状态 - 不再影响按钮的启用状态
+    _model.isConnected = isConnected;
+    
+    // 始终保持按钮启用，不受连接状态影响
+    _model.setFileUploadEnabled(true);
+    _model.setFileDownloadEnabled(true);
   }
   
   /// 处理文件上传
@@ -132,21 +143,84 @@ class SSHHeaderController extends ChangeNotifier {
   
   /// 获取远程目录内容
   Future<List<String>> getRemoteDirectoryContents(String path) async {
-    if (_isDisposed || !_sshController.isConnected) {
-      debugPrint('SSHHeaderController.getRemoteDirectoryContents: 未连接到SSH服务器');
-      throw SSHException('未连接到SSH服务器');
+    if (_isDisposed) {
+      debugPrint('SSHHeaderController.getRemoteDirectoryContents: 控制器已销毁');
+      throw SSHException('控制器已销毁');
     }
     
     debugPrint('SSHHeaderController.getRemoteDirectoryContents: 开始获取路径 $path 的内容');
     
-    try {
-      // 获取SFTP子系统
-      final client = _sshController.currentSession?.client;
-      if (client == null) {
-        throw SSHException('SSH客户端未初始化');
+    // 检查SSH控制器是否连接
+    if (!_sshController.isConnected) {
+      debugPrint('SSHHeaderController.getRemoteDirectoryContents: SSH未连接，等待连接...');
+      
+      // 尝试使用全局活动控制器替代
+      final activeController = SSHMultiTerminal.getCurrentController();
+      if (activeController != null && activeController.isConnected) {
+        debugPrint('SSHHeaderController.getRemoteDirectoryContents: 使用全局活动控制器替代');
+        // 使用全局活动控制器
+        SftpClient? sftp = await activeController.getSFTPClient();
+        if (sftp != null) {
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: 成功使用全局活动控制器获取SFTP客户端');
+          return _getDirectoryContentsWithSftp(sftp, path);
+        }
       }
       
-      final sftp = await client.sftp();
+      // 等待一段时间，看连接是否会建立
+      for (int i = 0; i < 3; i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (_sshController.isConnected) {
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: SSH已连接，可以继续');
+          break;
+        }
+        if (i == 2) {
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: 等待SSH连接超时');
+          return [];
+        }
+      }
+    }
+    
+    // 尝试最多3次获取SFTP客户端
+    SftpClient? sftp;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        // 直接从SSH控制器获取SFTP客户端
+        debugPrint('SSHHeaderController.getRemoteDirectoryContents: 第${attempt+1}次尝试获取SFTP客户端');
+        sftp = await _sshController.getSFTPClient();
+        
+        if (sftp != null) {
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: 第${attempt+1}次尝试成功获取SFTP客户端');
+          break;
+        }
+        
+        debugPrint('SSHHeaderController.getRemoteDirectoryContents: 第${attempt+1}次尝试获取SFTP客户端返回null');
+        
+        // 最后一次尝试失败时不等待
+        if (attempt < 2) {
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: 等待后重试...');
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } catch (e) {
+        debugPrint('SSHHeaderController.getRemoteDirectoryContents: 第${attempt+1}次尝试获取SFTP客户端出错: $e');
+        
+        // 最后一次尝试失败时不等待
+        if (attempt < 2) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      }
+    }
+    
+    if (sftp == null) {
+      debugPrint('SSHHeaderController.getRemoteDirectoryContents: 无法获取SFTP客户端，可能连接未就绪');
+      return [];
+    }
+    
+    return _getDirectoryContentsWithSftp(sftp, path);
+  }
+  
+  /// 使用SFTP客户端获取目录内容
+  Future<List<String>> _getDirectoryContentsWithSftp(SftpClient sftp, String path) async {
+    try {
       debugPrint('SSHHeaderController.getRemoteDirectoryContents: 成功获取SFTP子系统');
       
       // 验证路径是否存在
@@ -159,41 +233,57 @@ class SSHHeaderController extends ChangeNotifier {
         debugPrint('SSHHeaderController.getRemoteDirectoryContents: 目录存在且有效');
       } catch (e) {
         debugPrint('SSHHeaderController.getRemoteDirectoryContents: 检查目录状态出错: $e');
-        if (e is! SSHException) {
-          throw SSHException('目录不存在或无法访问: $path ($e)');
+        
+        // 尝试使用readdir代替stat，有些服务器stat可能有问题
+        try {
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: 尝试直接使用readdir读取目录');
+          // 只尝试获取流，不获取内容
+          final dirStream = sftp.readdir(path);
+          await dirStream.first; // 只尝试读取第一个元素验证目录是否可读
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: 目录可读，继续处理');
+        } catch (e2) {
+          debugPrint('SSHHeaderController.getRemoteDirectoryContents: 目录读取失败: $e2');
+          if (e is! SSHException) {
+            throw SSHException('目录不存在或无法访问: $path ($e)');
+          }
+          rethrow;
         }
-        rethrow;
       }
       
       // 读取目录内容 - dartssh2的readdir返回Stream<List<SftpName>>
       final contents = <String>[];
       
       debugPrint('SSHHeaderController.getRemoteDirectoryContents: 开始读取目录内容...');
-      await for (final list in sftp.readdir(path)) {
-        for (final item in list) {
-          final name = item.filename;
-          final isDir = item.longname.startsWith('d');
-          
-          // 忽略当前目录和上级目录标记
-          if (name != '.' && name != '..') {
-            contents.add('${isDir ? '[目录] ' : '[文件] '}$name');
+      try {
+        await for (final list in sftp.readdir(path)) {
+          for (final item in list) {
+            final name = item.filename;
+            final isDir = item.longname.startsWith('d');
+            
+            // 忽略当前目录和上级目录标记
+            if (name != '.' && name != '..') {
+              contents.add('${isDir ? '[目录] ' : '[文件] '}$name');
+            }
           }
         }
+        
+        // 按类型和名称排序：先目录后文件
+        contents.sort((a, b) {
+          final aIsDir = a.startsWith('[目录]');
+          final bIsDir = b.startsWith('[目录]');
+          
+          if (aIsDir && !bIsDir) return -1;
+          if (!aIsDir && bIsDir) return 1;
+          
+          return a.compareTo(b);
+        });
+        
+        debugPrint('SSHHeaderController.getRemoteDirectoryContents: 成功获取到${contents.length}个项目');
+        return contents;
+      } catch (e) {
+        debugPrint('SSHHeaderController.getRemoteDirectoryContents: 读取目录内容流出错: $e');
+        throw SSHException('读取目录内容出错: $e');
       }
-      
-      // 按类型和名称排序：先目录后文件
-      contents.sort((a, b) {
-        final aIsDir = a.startsWith('[目录]');
-        final bIsDir = b.startsWith('[目录]');
-        
-        if (aIsDir && !bIsDir) return -1;
-        if (!aIsDir && bIsDir) return 1;
-        
-        return a.compareTo(b);
-      });
-      
-      debugPrint('SSHHeaderController.getRemoteDirectoryContents: 成功获取到${contents.length}个项目');
-      return contents;
     } catch (e) {
       debugPrint('SSHHeaderController.getRemoteDirectoryContents 获取远程目录内容失败: $e');
       if (e is SSHException) {

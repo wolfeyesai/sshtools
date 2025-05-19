@@ -33,6 +33,49 @@ class SSHMultiTerminal extends StatefulWidget {
   final String initialPassword;
   final int initialPort;
   
+  /// 当前活动的SSH控制器实例，用于全局访问
+  static SSHController? activeController;
+  
+  /// 获取当前活动的SSH控制器
+  static SSHController? getCurrentController() {
+    return activeController;
+  }
+  
+  /// 设置当前活动的SSH控制器
+  static void setActiveController(SSHController? controller) {
+    if (controller != null && controller != activeController) {
+      debugPrint('SSHMultiTerminal: 全局活动控制器已更新');
+      activeController = controller;
+    }
+  }
+  
+  /// 获取当前活动SSH控制器的连接状态
+  static bool isActiveControllerConnected() {
+    return activeController?.isConnected ?? false;
+  }
+  
+  /// 确保全局活动控制器已就绪
+  static Future<bool> ensureActiveControllerReady() async {
+    if (activeController == null) {
+      debugPrint('SSHMultiTerminal: 活动控制器为null');
+      return false;
+    }
+    
+    // 尝试等待连接建立
+    for (int i = 0; i < 3; i++) {
+      if (activeController!.isConnected) {
+        debugPrint('SSHMultiTerminal: 活动控制器已连接');
+        return true;
+      }
+      
+      debugPrint('SSHMultiTerminal: 等待活动控制器连接 (尝试 ${i+1}/3)');
+      await Future.delayed(const Duration(seconds: 1));
+    }
+    
+    debugPrint('SSHMultiTerminal: 活动控制器未能连接，等待超时');
+    return false;
+  }
+  
   /// 构造函数
   const SSHMultiTerminal({
     Key? key,
@@ -65,6 +108,10 @@ class _SSHMultiTerminalState extends State<SSHMultiTerminal> {
   void _addInitialSession() {
     // 创建独立的SSH控制器实例
     final controller = _createNewSSHController();
+    
+    // 设置全局活动控制器
+    SSHMultiTerminal.activeController = controller;
+    debugPrint('SSHMultiTerminal: 已设置初始活动控制器');
     
     // 创建初始会话标签
     final initialTab = SSHSessionTab(
@@ -219,6 +266,19 @@ class _SSHMultiTerminalState extends State<SSHMultiTerminal> {
     if (index >= 0 && index < _sessions.length) {
       setState(() {
         _activeSessionIndex = index;
+        
+        // 更新全局活动控制器
+        SSHMultiTerminal.activeController = _sessions[index].tab.controller;
+        debugPrint('SSHMultiTerminal: 已更新活动控制器到会话 #$index');
+        
+        // 检查控制器是否连接，如果未连接尝试建立连接
+        if (!_sessions[index].tab.controller.isConnected) {
+          debugPrint('SSHMultiTerminal: 切换到的会话未连接，尝试建立连接');
+          // 使用Future.microtask避免在setState中进行异步操作
+          Future.microtask(() => _connectSession(index));
+        } else {
+          debugPrint('SSHMultiTerminal: 切换到的会话已连接');
+        }
       });
     }
   }
@@ -295,6 +355,10 @@ class _SSHMultiTerminalState extends State<SSHMultiTerminal> {
     // 获取会话
     final session = _sessions[index];
     
+    // 更新全局活动控制器
+    SSHMultiTerminal.activeController = session.tab.controller;
+    debugPrint('SSHMultiTerminal: 已更新活动控制器到会话 #$index');
+    
     if (!mounted) return;
     
     // 检查连接状态，如果已连接，无需再连接
@@ -307,6 +371,10 @@ class _SSHMultiTerminalState extends State<SSHMultiTerminal> {
           
           // 强制重新初始化终端
           _setupTerminal(session, sshSession, index);
+          
+          // 预热SFTP客户端
+          _preheatSFTPClient(session.tab.controller);
+          
           return;
         }
       } catch (e) {
@@ -376,6 +444,9 @@ class _SSHMultiTerminalState extends State<SSHMultiTerminal> {
           // 显示连接成功消息
           terminal.write('连接成功！请稍候，正在初始化终端...\r\n');
           
+          // 预热SFTP客户端
+          _preheatSFTPClient(session.tab.controller);
+          
           // 发送一些初始命令，确保Shell显示提示符
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted) {
@@ -437,6 +508,30 @@ class _SSHMultiTerminalState extends State<SSHMultiTerminal> {
         terminal.write('连接错误: $e\r\n');
       }
     }
+  }
+  
+  /// 预热SFTP客户端以确保SFTP功能可用
+  void _preheatSFTPClient(SSHController controller) {
+    // 在后台尝试获取SFTP客户端，预热SFTP子系统
+    Future.delayed(const Duration(milliseconds: 800), () async {
+      try {
+        debugPrint('SSHMultiTerminal: 预热SFTP客户端...');
+        final sftp = await controller.getSFTPClient();
+        if (sftp != null) {
+          // 尝试进行一个简单的SFTP操作以完全初始化SFTP子系统
+          try {
+            await sftp.stat('/'); // 获取根目录状态
+            debugPrint('SSHMultiTerminal: SFTP客户端预热成功');
+          } catch (e) {
+            debugPrint('SSHMultiTerminal: SFTP操作失败，但客户端已初始化: $e');
+          }
+        } else {
+          debugPrint('SSHMultiTerminal: 获取SFTP客户端失败');
+        }
+      } catch (e) {
+        debugPrint('SSHMultiTerminal: 预热SFTP客户端时出错: $e');
+      }
+    });
   }
   
   /// 设置终端和流处理

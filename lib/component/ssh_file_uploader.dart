@@ -12,6 +12,7 @@ import '../controllers/ssh_header_controller.dart';
 import '../models/ssh_header_model.dart';
 import '../component/message_component.dart';
 import '../component/remote_directory_browser.dart';
+import '../component/ssh_multi_terminal.dart';
 import '../models/ssh_model.dart';
 import 'package:dartssh2/dartssh2.dart';
 
@@ -26,6 +27,15 @@ class SSHFileUploader {
     required SSHController sshController,
   }) async {
     try {
+      // 尝试使用全局活动控制器（如果存在并已连接）
+      final activeController = SSHMultiTerminal.getCurrentController();
+      if (activeController != null && activeController.isConnected) {
+        debugPrint('SSHFileUploader: 使用全局活动控制器替代传入的控制器');
+        sshController = activeController;
+      } else {
+        debugPrint('SSHFileUploader: 使用传入的SSH控制器');
+      }
+      
       // 使用文件选择器选择文件
       FilePickerResult? result = await FilePicker.platform.pickFiles();
       
@@ -34,13 +44,7 @@ class SSHFileUploader {
         final String fileName = result.files.single.name;
         final File file = File(filePath);
         
-        // 显示开始上传消息
-        MessageComponentFactory.showInfo(
-          context,
-          message: '开始上传文件: $fileName',
-        );
-        
-        // 显示上传目标路径对话框
+        // 显示远程目标路径对话框
         final String? remoteFilePath = await _showRemotePathDialog(
           context: context,
           sshController: sshController,
@@ -49,10 +53,6 @@ class SSHFileUploader {
         
         if (remoteFilePath == null) {
           // 用户取消上传
-          MessageComponentFactory.showInfo(
-            context,
-            message: '已取消文件上传',
-          );
           return null;
         }
         
@@ -91,6 +91,10 @@ class SSHFileUploader {
           
           // 如果上下文还有效，显示结果消息
           if (uploadTask.success && context.mounted) {
+            // 如果对话框仍然打开，先关闭对话框
+            Navigator.of(context).popUntil((route) => route is! DialogRoute);
+            
+            // 显示成功消息
             MessageComponentFactory.showSuccess(
               context,
               message: '文件上传成功: $remoteFilePath',
@@ -117,10 +121,6 @@ class SSHFileUploader {
         return remoteFilePath;
       } else {
         // 用户未选择文件
-        MessageComponentFactory.showInfo(
-          context,
-          message: '未选择任何文件',
-        );
         return null;
       }
     } catch (e) {

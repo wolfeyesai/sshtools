@@ -6,7 +6,7 @@ class SSHFooterModel extends ChangeNotifier {
   /// 命令输入文本
   String _commandText = '';
   
-  /// 按钮启用状态
+  /// 按钮启用状态 - 默认始终启用，不再依赖连接状态
   bool _isCommandEnabled = true;
   bool _isMenuEnabled = true;
   bool _isHistoryEnabled = true;
@@ -59,14 +59,14 @@ class SSHFooterModel extends ChangeNotifier {
     }
   }
   
-  /// 命令按钮是否启用
-  bool get isCommandEnabled => _isCommandEnabled && _isConnected;
+  /// 命令按钮是否启用 - 始终启用，不再依赖连接状态
+  bool get isCommandEnabled => _isCommandEnabled;
   
-  /// 菜单按钮是否启用
-  bool get isMenuEnabled => _isMenuEnabled && _isConnected;
+  /// 菜单按钮是否启用 - 始终启用，不再依赖连接状态
+  bool get isMenuEnabled => _isMenuEnabled;
   
-  /// 历史按钮是否启用
-  bool get isHistoryEnabled => _isHistoryEnabled && _isConnected;
+  /// 历史按钮是否启用 - 始终启用，不再依赖连接状态
+  bool get isHistoryEnabled => _isHistoryEnabled;
   
   /// 是否显示快捷命令
   bool get showQuickCommands => _showQuickCommands;

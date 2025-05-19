@@ -11,6 +11,7 @@ import '../models/ssh_command_model.dart';
 import '../controllers/ssh_controller.dart';
 import '../controllers/ssh_command_controller.dart';
 import '../component/message_component.dart';
+import '../component/ssh_multi_terminal.dart';
 
 /// SSH页尾控制器，用于管理SSH页尾的业务逻辑
 class SSHFooterController extends ChangeNotifier {
@@ -53,6 +54,15 @@ class SSHFooterController extends ChangeNotifier {
       if (_isDisposed) return;
       
       try {
+        // 尝试获取全局活动控制器
+        final activeController = SSHMultiTerminal.getCurrentController();
+        if (activeController != null && activeController.isConnected && activeController != _sshController) {
+          debugPrint('SSHFooterController: 使用全局活动控制器替代传入的控制器');
+          // 更新控制器引用
+          _connectionStateSubscription?.cancel();
+          _connectionStateSubscription = activeController.connectionStateStream.listen(_handleConnectionStateChange);
+        }
+        
         // 如果已经在构造时设置了命令控制器，直接更新快捷命令
         if (_commandController != null) {
           _updateQuickCommands();
@@ -107,23 +117,51 @@ class SSHFooterController extends ChangeNotifier {
   void _handleConnectionStateChange(SSHConnectionState state) {
     if (_isDisposed) return;
     
-    // 更新模型中的连接状态
-    _model.isConnected = state == SSHConnectionState.connected;
+    // 记录连接状态变化
+    final bool isConnected = state == SSHConnectionState.connected;
+    debugPrint('SSH连接状态变化: $state (isConnected: $isConnected)');
+    
+    // 更新模型中的连接状态 - 但不影响按钮的启用状态
+    _model.isConnected = isConnected;
+    
+    // 始终保持按钮启用，不受连接状态影响
+    _model.setCommandEnabled(true);
+    _model.setMenuEnabled(true);
+    _model.setHistoryEnabled(true);
   }
   
   /// 发送命令
   Future<bool> sendCommand(BuildContext context) async {
-    if (_isDisposed || !_model.isCommandEnabled) return false;
+    if (_isDisposed) return false;
     
     try {
       final command = _model.commandText.trim();
       if (command.isEmpty) return false;
       
+      // 尝试获取全局活动控制器
+      SSHController actualController = _sshController;
+      final activeController = SSHMultiTerminal.getCurrentController();
+      if (activeController != null && activeController.isConnected) {
+        debugPrint('SSHFooterController.sendCommand: 使用全局活动控制器发送命令');
+        actualController = activeController;
+      }
+      
+      // 检查SSH控制器是否连接
+      if (!actualController.isConnected) {
+        if (context.mounted) {
+          MessageComponentFactory.showError(
+            context,
+            message: 'SSH未连接，无法发送命令',
+          );
+        }
+        return false;
+      }
+      
       // 禁用发送按钮，防止重复发送
       _model.setCommandEnabled(false);
       
       // 发送命令到SSH会话
-      _sshController.sendToShellClient('$command\n');
+      actualController.sendToShellClient('$command\n');
       
       // 添加到命令历史（如果有命令控制器）
       if (_currentSession != null) {

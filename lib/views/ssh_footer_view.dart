@@ -152,11 +152,9 @@ class SSHFooterView extends StatelessWidget {
         fontSize: 14,
         color: Theme.of(context).colorScheme.onSurface,
       ),
-      enabled: model.isConnected,
+      enabled: true, // 始终启用输入框，即使未连接也可以输入命令
       onSubmitted: (_) {
-        if (model.isCommandEnabled) {
-          controller.sendCommand(context);
-        }
+        controller.sendCommand(context);
       },
     );
   }
@@ -192,8 +190,10 @@ class SSHFooterView extends StatelessWidget {
     SSHFooterModel model,
     SSHFooterController controller
   ) {
+    final bool hasText = model.commandText.trim().isNotEmpty;
+    
     return ButtonComponent.create(
-      type: model.isCommandEnabled 
+      type: model.isCommandEnabled && hasText
           ? ButtonType.primary 
           : ButtonType.disabled,
       label: '发送',
@@ -204,7 +204,7 @@ class SSHFooterView extends StatelessWidget {
       ),
       shape: ButtonShape.pill,
       size: ButtonSize.medium,
-      onPressed: model.isCommandEnabled 
+      onPressed: (model.isCommandEnabled && hasText)
           ? () => controller.sendCommand(context)
           : null,
     );

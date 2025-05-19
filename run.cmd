@@ -30,8 +30,25 @@ if "%choice%"=="1" (
     echo.
     echo Building APK...
     flutter build apk --release
-    echo.
-    echo Build completed! Check the build/app/outputs/flutter-apk/ directory for the sshtools-release.apk file.
+    
+    if %ERRORLEVEL% NEQ 0 (
+        echo.
+        echo Build failed! Please check the error messages above.
+        pause
+        goto :eof
+    ) else (
+        echo.
+        REM 创建release目录（如果不存在）
+        if not exist "release" mkdir release
+        
+        REM 复制APK到release目录
+        echo Copying APK to release directory...
+        copy /Y "build\app\outputs\flutter-apk\app-release.apk" "release\sshtools-release.apk"
+        
+        echo.
+        echo Build completed! 
+        echo APK file has been copied to: release\sshtools-release.apk
+    )
     pause
     goto :eof
 )
@@ -71,9 +88,31 @@ if "%choice%"=="2" (
         goto :eof
     ) else (
         echo.
+        REM 创建release目录（如果不存在）
+        if not exist "release" mkdir release
+        
+        REM 创建临时目录用于重命名
+        echo Creating temporary directory for release files...
+        if exist "build\windows\temp_release" rmdir /S /Q "build\windows\temp_release"
+        mkdir "build\windows\temp_release"
+        mkdir "build\windows\temp_release\sshtools"
+        
+        REM 复制Windows发布文件到临时目录中的sshtools子目录
+        echo Copying Windows release files to temporary directory...
+        xcopy /E /I /Y "build\windows\runner\Release\*" "build\windows\temp_release\sshtools\"
+        
+        REM 复制到release目录
+        echo Copying sshtools folder to release directory...
+        xcopy /E /I /Y "build\windows\temp_release\*" "release\"
+        
+        REM 清理临时目录
+        echo Cleaning up temporary directory...
+        rmdir /S /Q "build\windows\temp_release"
+        
+        echo.
         echo Build completed successfully!
-        echo The Windows application is available at: build\windows\runner\Release\
-        echo You can distribute the entire Release folder contents.
+        echo The Windows application has been copied to: release\sshtools\
+        echo You can distribute these files directly.
     )
     
     pause
@@ -225,8 +264,16 @@ if "%choice%"=="10" (
         goto :eof
     ) else (
         echo.
+        REM 创建release目录（如果不存在）
+        if not exist "release" mkdir release
+        if not exist "release\web" mkdir release\web
+        
+        echo Copying web files to release directory...
+        xcopy /E /I /Y "build\web\*" "release\web\"
+        
+        echo.
         echo Build completed successfully with code obfuscation!
-        echo The web application is available at: build\web\
+        echo The web application has been copied to: release\web\
         echo You can deploy these files to any web server.
         echo.
         echo Security notes:
@@ -235,7 +282,7 @@ if "%choice%"=="10" (
         echo - Sensitive data should be handled through secure APIs
         echo.
         echo To test locally, you can run:
-        echo cd build\web
+        echo cd release\web
         echo python -m http.server 8000
         echo Then open http://localhost:8000 in your browser
     )

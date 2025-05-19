@@ -377,6 +377,48 @@ class SSHController extends ChangeNotifier {
     }
   }
   
+  /// 获取SFTP客户端
+  Future<SftpClient?> getSFTPClient() async {
+    if (_isDisposed) {
+      debugPrint('SSH控制器已销毁，无法获取SFTP客户端');
+      return null;
+    }
+    
+    try {
+      // 检查SSH客户端是否有效
+      if (_currentSession == null || _currentSession!.client == null) {
+        debugPrint('SSH客户端未初始化，无法获取SFTP客户端');
+        return null;
+      }
+
+      // 等待认证完成 - 这是关键步骤
+      // dartssh2文档中提到需要等待authenticated完成后才能使用SFTP
+      try {
+        debugPrint('等待SSH认证完成...');
+        // 设置超时，避免无限等待
+        await _currentSession!.client!.authenticated.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('SSH认证等待超时');
+            return;
+          }
+        );
+        debugPrint('SSH认证已完成，可以继续获取SFTP客户端');
+      } catch (e) {
+        debugPrint('等待SSH认证时出错: $e');
+        // 继续尝试，可能已经认证成功
+      }
+      
+      // 获取SFTP子系统
+      final sftp = await _currentSession!.client!.sftp();
+      debugPrint('SFTP子系统获取成功');
+      return sftp;
+    } catch (e) {
+      debugPrint('获取SFTP客户端出错: $e');
+      return null;
+    }
+  }
+  
   @override
   void dispose() {
     // 标记为已销毁
