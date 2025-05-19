@@ -22,14 +22,21 @@ if "%choice%"=="1" (
     echo.
     echo Building Flutter project for Android...
     echo ================================
-    flutter clean
-    flutter pub get
+    
+    echo Step 1: Running flutter clean...
+    call flutter clean
     echo.
-    echo Generating app icons...
-    flutter pub run flutter_launcher_icons
+    
+    echo Step 2: Running flutter pub get...
+    call flutter pub get
     echo.
-    echo Building APK...
-    flutter build apk --release
+    
+    echo Step 3: Generating app icons...
+    call flutter pub run flutter_launcher_icons
+    echo.
+    
+    echo Step 4: Building APK...
+    call flutter build apk --release
     
     if %ERRORLEVEL% NEQ 0 (
         echo.
@@ -38,15 +45,15 @@ if "%choice%"=="1" (
         goto :eof
     ) else (
         echo.
-        REM 创建release目录（如果不存在）
+        REM Create release directory if not exists
         if not exist "release" mkdir release
         
-        REM 复制APK到release目录
-        echo Copying APK to release directory...
+        REM Copy APK to release directory
+        echo Step 5: Copying APK to release directory...
         copy /Y "build\app\outputs\flutter-apk\app-release.apk" "release\sshtools-release.apk"
         
         echo.
-        echo Build completed! 
+        echo Build completed successfully! 
         echo APK file has been copied to: release\sshtools-release.apk
     )
     pause
@@ -88,24 +95,24 @@ if "%choice%"=="2" (
         goto :eof
     ) else (
         echo.
-        REM 创建release目录（如果不存在）
+        REM Create release directory if not exists
         if not exist "release" mkdir release
         
-        REM 创建临时目录用于重命名
+        REM Create temporary directory for release files
         echo Creating temporary directory for release files...
         if exist "build\windows\temp_release" rmdir /S /Q "build\windows\temp_release"
         mkdir "build\windows\temp_release"
         mkdir "build\windows\temp_release\sshtools"
         
-        REM 复制Windows发布文件到临时目录中的sshtools子目录
+        REM Copy Windows release files to temporary directory
         echo Copying Windows release files to temporary directory...
         xcopy /E /I /Y "build\windows\runner\Release\*" "build\windows\temp_release\sshtools\"
         
-        REM 复制到release目录
+        REM Copy to release directory
         echo Copying sshtools folder to release directory...
         xcopy /E /I /Y "build\windows\temp_release\*" "release\"
         
-        REM 清理临时目录
+        REM Clean up temporary directory
         echo Cleaning up temporary directory...
         rmdir /S /Q "build\windows\temp_release"
         
@@ -264,7 +271,7 @@ if "%choice%"=="10" (
         goto :eof
     ) else (
         echo.
-        REM 创建release目录（如果不存在）
+        REM Create release directory if not exists
         if not exist "release" mkdir release
         if not exist "release\web" mkdir release\web
         

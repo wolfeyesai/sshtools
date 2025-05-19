@@ -84,13 +84,13 @@ class SSHCommandController extends ChangeNotifier {
   /// 内部加载预设命令方法，不受_isBusy标志影响
   Future<bool> _loadPresetsInternal() async {
     try {
-      log.i('SSHCommandController', '_loadPresetsInternal(): 加载预设命令');
-      final presets = SSHCommandPresets.getPresets();
-      _commands.addAll(presets);
+      log.i('SSHCommandController', '_loadPresetsInternal(): 加载空预设命令');
+      // 只保留分组结构，不添加任何命令
+      _commands.clear();
       _presetsLoaded = true;
       await _saveCommandsInternal();
       notifyListeners();
-      log.i('SSHCommandController', '_loadPresetsInternal(): 预设命令加载完成，共 ${presets.length} 个命令');
+      log.i('SSHCommandController', '_loadPresetsInternal(): 仅保留分组结构，未加载任何命令');
       return true;
     } catch (e) {
       log.e('SSHCommandController', '加载预设命令出错', e);

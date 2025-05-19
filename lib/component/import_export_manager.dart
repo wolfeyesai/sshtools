@@ -172,12 +172,47 @@ class ImportExportManager {
               type: ButtonType.custom,
               label: '导出全部',
               icon: const Icon(Icons.save, color: Colors.white),
-              onPressed: () => _exportData(
-                context, 
-                commandController, 
-                sessionController,
-                type: ImportExportDataType.all,
-              ),
+              onPressed: () async {
+                // 弹窗选择导出方式
+                final result = await showDialog<String>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('选择导出方式'),
+                    content: const Text('请选择导出全部数据的方式：'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop('clipboard'),
+                        child: const Text('复制到剪贴板'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop('file'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('导出到文件'),
+                      ),
+                    ],
+                  ),
+                );
+                if (result == 'file') {
+                  await _exportData(
+                    context,
+                    commandController,
+                    sessionController,
+                    type: ImportExportDataType.all,
+                    toFile: true,
+                  );
+                } else if (result == 'clipboard') {
+                  await _exportData(
+                    context,
+                    commandController,
+                    sessionController,
+                    type: ImportExportDataType.all,
+                    toFile: false,
+                  );
+                }
+              },
             ),
           ],
         ),
