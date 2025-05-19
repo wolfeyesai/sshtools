@@ -78,9 +78,6 @@ dev_dependencies:
   # Hive生成器
   hive_generator: ^2.0.1
   build_runner: ^2.4.9
-  
-  # 应用图标生成工具
-  flutter_launcher_icons: ^0.14.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

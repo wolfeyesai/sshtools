@@ -41,6 +41,15 @@ class Logger {
   /// 日期格式
   final DateFormat _dateFormat = DateFormat('HH:mm:ss.SSS');
   
+  /// 上次日志时间记录，用于限制频率
+  final Map<String, DateTime> _lastLogTimes = {};
+  
+  /// 默认日志间隔时间（秒）
+  int _defaultLogInterval = 15;
+  
+  /// 心跳日志间隔时间（秒）
+  int _heartbeatLogInterval = 30;
+  
   /// 工厂构造函数
   factory Logger() {
     return _instance;
@@ -69,27 +78,98 @@ class Logger {
     _showFileInfo = show;
   }
   
+  /// 设置默认日志间隔时间（秒）
+  void setDefaultLogInterval(int seconds) {
+    _defaultLogInterval = seconds;
+  }
+  
+  /// 设置心跳日志间隔时间（秒）
+  void setHeartbeatLogInterval(int seconds) {
+    _heartbeatLogInterval = seconds;
+  }
+  
+  /// 检查是否应该记录该日志（限流逻辑）
+  bool _shouldLogMessage(String tag, String message, [int? interval]) {
+    // 获取当前时间
+    final now = DateTime.now();
+    
+    // 默认间隔时间
+    final int logInterval = interval ?? _defaultLogInterval;
+    
+    // 心跳日志特殊处理
+    if (_isHeartbeatLog(message)) {
+      // 心跳日志使用更长间隔
+      return _checkLogTimeInterval(tag, message, now, _heartbeatLogInterval);
+    }
+    
+    // 普通日志
+    return _checkLogTimeInterval(tag, message, now, logInterval);
+  }
+  
+  /// 检查日志时间间隔
+  bool _checkLogTimeInterval(String tag, String message, DateTime now, int intervalSeconds) {
+    // 创建唯一键来区分不同的日志消息
+    final String logKey = '$tag-${message.hashCode}';
+    
+    if (_lastLogTimes.containsKey(logKey)) {
+      final lastTime = _lastLogTimes[logKey]!;
+      final diff = now.difference(lastTime).inSeconds;
+      
+      // 如果间隔不够，不记录日志
+      if (diff < intervalSeconds) {
+        return false;
+      }
+    }
+    
+    // 更新最后记录时间
+    _lastLogTimes[logKey] = now;
+    return true;
+  }
+  
+  /// 判断是否为心跳日志
+  bool _isHeartbeatLog(String message) {
+    // 心跳日志通常包含这些关键词
+    final List<String> heartbeatKeywords = [
+      'heartbeat', '心跳', 'ping', 'alive', 'polling', '轮询', 'checking', '检查'
+    ];
+    
+    // 检查消息中是否包含心跳关键词
+    for (final keyword in heartbeatKeywords) {
+      if (message.toLowerCase().contains(keyword)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
   /// 记录调试级别日志
   void d(String tag, String message, [dynamic data]) {
-    _log(LogLevel.debug, tag, message, data);
+    if (_shouldLogMessage(tag, message)) {
+      _log(LogLevel.debug, tag, message, data);
+    }
   }
   
   /// 记录信息级别日志
   void i(String tag, String message, [dynamic data]) {
-    _log(LogLevel.info, tag, message, data);
+    if (_shouldLogMessage(tag, message)) {
+      _log(LogLevel.info, tag, message, data);
+    }
   }
   
   /// 记录警告级别日志
   void w(String tag, String message, [dynamic data]) {
-    _log(LogLevel.warning, tag, message, data);
+    if (_shouldLogMessage(tag, message)) {
+      _log(LogLevel.warning, tag, message, data);
+    }
   }
   
-  /// 记录错误级别日志
+  /// 记录错误级别日志（错误日志不受限流影响，始终记录）
   void e(String tag, String message, [dynamic data, StackTrace? stackTrace]) {
     _log(LogLevel.error, tag, message, data, stackTrace);
   }
   
-  /// 记录致命错误级别日志
+  /// 记录致命错误级别日志（致命错误日志不受限流影响，始终记录）
   void f(String tag, String message, [dynamic data, StackTrace? stackTrace]) {
     _log(LogLevel.fatal, tag, message, data, stackTrace);
   }

@@ -10,6 +10,7 @@
 analyzer:
   errors:
     invalid_use_of_protected_member: ignore
+    unreachable_switch_default: ignore
 include: package:flutter_lints/flutter.yaml
 
 linter:

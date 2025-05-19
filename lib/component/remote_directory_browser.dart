@@ -1,12 +1,18 @@
-// ignore_for_file: use_super_parameters
+// ignore_for_file: use_super_parameters, unused_import
 
 import 'package:flutter/material.dart';
 import '../controllers/ssh_controller.dart';
+import '../controllers/ssh_header_controller.dart';
+import '../models/ssh_header_model.dart';
+import '../models/ssh_model.dart';
 
 /// 远程目录浏览器对话框
 class RemoteDirectoryBrowser extends StatefulWidget {
   /// SSH控制器
   final SSHController sshController;
+  
+  /// SSH头部控制器
+  final SSHHeaderController headerController;
   
   /// 初始路径
   final String initialPath;
@@ -15,6 +21,7 @@ class RemoteDirectoryBrowser extends StatefulWidget {
   const RemoteDirectoryBrowser({
     Key? key,
     required this.sshController,
+    required this.headerController,
     this.initialPath = '/tmp',
   }) : super(key: key);
   
@@ -24,13 +31,30 @@ class RemoteDirectoryBrowser extends StatefulWidget {
     required SSHController sshController,
     String initialPath = '/tmp',
   }) async {
-    return showDialog<String>(
-      context: context,
-      builder: (context) => RemoteDirectoryBrowser(
-        sshController: sshController,
-        initialPath: initialPath,
-      ),
+    // 创建临时的SSH头部控制器
+    final headerModel = SSHHeaderModel(
+      title: '浏览目录',
+      isConnected: sshController.isConnected,
     );
+    
+    final headerController = SSHHeaderController(
+      model: headerModel,
+      sshController: sshController,
+    );
+    
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (context) => RemoteDirectoryBrowser(
+          sshController: sshController,
+          headerController: headerController,
+          initialPath: initialPath,
+        ),
+      );
+    } finally {
+      // 确保对话框关闭后释放控制器资源
+      headerController.dispose();
+    }
   }
 
   @override
@@ -75,7 +99,13 @@ class _RemoteDirectoryBrowserState extends State<RemoteDirectoryBrowser> {
     });
     
     try {
-      final contents = await widget.sshController.getRemoteDirectoryContents(path);
+      debugPrint('RemoteDirectoryBrowser: 开始加载目录 $path');
+      final contents = await widget.headerController.getRemoteDirectoryContents(path);
+      
+      if (!mounted) {
+        debugPrint('RemoteDirectoryBrowser: 组件已销毁，不更新状态');
+        return;
+      }
       
       setState(() {
         _directoryContents = contents;
@@ -83,7 +113,16 @@ class _RemoteDirectoryBrowserState extends State<RemoteDirectoryBrowser> {
         _pathController.text = path;
         _isLoading = false;
       });
+      
+      debugPrint('RemoteDirectoryBrowser: 成功加载目录，获取到 ${contents.length} 个项目');
     } catch (e) {
+      debugPrint('RemoteDirectoryBrowser: 加载目录失败: $e');
+      
+      if (!mounted) {
+        debugPrint('RemoteDirectoryBrowser: 组件已销毁，不更新状态');
+        return;
+      }
+      
       setState(() {
         _errorMessage = '无法加载目录: $e';
         _isLoading = false;

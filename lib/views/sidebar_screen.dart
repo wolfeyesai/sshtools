@@ -1,8 +1,12 @@
-// ignore_for_file: use_super_parameters, deprecated_member_use
+// ignore_for_file: use_super_parameters, duplicate_ignore, unused_local_variable, deprecated_member_use, prefer_conditional_assignment
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sidebar_provider.dart';
+import '../controllers/ssh_controller.dart';
+import '../models/ssh_header_model.dart';
+import '../controllers/ssh_header_controller.dart';
+import '../views/ssh_command_manager_screen.dart';
 
 /// 侧边栏组件
 class SidebarScreen extends StatelessWidget {
@@ -53,10 +57,16 @@ class _SidebarContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = Provider.of<SidebarProvider>(context);
     
-    // 构建页面列表（IP页面和动态终端页面）
+    // 确保命令管理页面已初始化
+    if (provider.commandPage == null) {
+      provider.commandPage = const SSHCommandManagerPage();
+    }
+    
+    // 构建页面列表（IP页面、动态终端页面和命令管理页面）
     final pages = [
       ipPage,                // 第一个页面是固定的IP页面
-      provider.terminalPage  // 第二个页面是动态终端页面
+      provider.terminalPage, // 第二个页面是动态终端页面
+      provider.commandPage!, // 第三个页面是命令管理页面
     ];
     
     return Scaffold(
@@ -75,67 +85,97 @@ class _SidebarContent extends StatelessWidget {
   
   /// 构建底部导航栏
   Widget _buildBottomNavigationBar(BuildContext context, SidebarProvider provider) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).navigationBarTheme.backgroundColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
+    return NavigationBar(
+      selectedIndex: provider.selectedIndex,
+      onDestinationSelected: (index) {
+        // 检查SSH控制器是否正在传输文件
+        if (provider.selectedIndex == 1 && index != 1) {
+          // 当前在终端页面，准备切换到其他页面
+          // 获取SSH控制器实例
+          final sshController = Provider.of<SSHController>(context, listen: false);
+          
+          // 创建临时SSH头部控制器来检查文件传输状态
+          final headerModel = SSHHeaderModel(
+            title: '终端',
+            isConnected: sshController.isConnected,
+          );
+          
+          final headerController = SSHHeaderController(
+            model: headerModel,
+            sshController: sshController,
+          );
+          
+          // 如果正在传输文件，显示确认对话框
+          if (headerController.isTransferringFile) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text('文件传输进行中'),
+                  ],
+                ),
+                content: const Text(
+                  '有文件传输正在进行，切换页面后传输将在后台继续。\n您确定要切换页面吗？',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      // 切换到请求的页面
+                      provider.setIndex(index);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('继续切换'),
+                  ),
+                ],
+              ),
+            );
+            // 释放临时控制器资源
+            headerController.dispose();
+            return;
+          }
+          
+          // 释放临时控制器资源
+          headerController.dispose();
+        }
+        
+        // 没有文件传输或不是从终端页面切换，直接设置索引
+        provider.setIndex(index);
+      },
+      backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.95),
+      destinations: [
+        NavigationDestination(
+          icon: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Icon(Icons.home_rounded),
           ),
-        ],
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          topRight: Radius.circular(16),
+          label: '首页',
         ),
-      ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          topRight: Radius.circular(16),
+        NavigationDestination(
+          icon: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Icon(Icons.terminal),
+          ),
+          label: '终端',
         ),
-        child: BottomNavigationBar(
-          currentIndex: provider.selectedIndex,
-          onTap: provider.setIndex,
-          backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.95),
-          selectedItemColor: Theme.of(context).colorScheme.primary,
-          unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
-          type: BottomNavigationBarType.fixed,
-          elevation: 0,
-          items: [
-            _buildNavItem(
-              icon: Icons.home_rounded,
-              activeIcon: Icons.home_rounded,
-              label: '首页',
-            ),
-            _buildNavItem(
-              icon: Icons.terminal,
-              activeIcon: Icons.terminal,
-              label: '终端',
-            ),
-          ],
+        NavigationDestination(
+          icon: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Icon(Icons.code),
+          ),
+          label: '命令',
         ),
-      ),
-    );
-  }
-  
-  /// 构建导航项
-  BottomNavigationBarItem _buildNavItem({
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-  }) {
-    return BottomNavigationBarItem(
-      icon: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0),
-        child: Icon(icon),
-      ),
-      activeIcon: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0),
-        child: Icon(activeIcon),
-      ),
-      label: label,
+      ],
     );
   }
   
@@ -190,6 +230,13 @@ class _SidebarContent extends StatelessWidget {
             index: 1,
             icon: Icons.terminal,
             title: '终端',
+          ),
+          _buildDrawerItem(
+            context: context,
+            provider: provider,
+            index: 2,
+            icon: Icons.code,
+            title: '命令管理',
           ),
           const Divider(),
           ListTile(

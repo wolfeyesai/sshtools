@@ -11,6 +11,7 @@ import 'controllers/ssh_controller.dart';
 import 'controllers/ssh_command_controller.dart';
 import 'controllers/ssh_session_controller.dart';
 import 'controllers/ip_controller.dart';
+import 'models/ssh_header_model.dart';
 import 'component/ssh_command_edit_dialog.dart';
 import 'component/message_component.dart';
 
@@ -74,6 +75,9 @@ class CustomNavigatorObserver extends NavigatorObserver {
 void main() async {
   // 确保Flutter已初始化
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 禁用Provider类型检查错误
+  Provider.debugCheckInvalidValueType = null;
   
   // 处理键盘错误
   FlutterError.onError = (FlutterErrorDetails details) {

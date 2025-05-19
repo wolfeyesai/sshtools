@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/ssh_command_model.dart';
 import '../utils/logger.dart';
+import 'package:uuid/uuid.dart';
+import '../models/ssh_model.dart';
 
 /// SSH命令控制器
 class SSHCommandController extends ChangeNotifier {
@@ -370,13 +372,33 @@ class SSHCommandController extends ChangeNotifier {
     try {
       log.i('SSHCommandController', 'addCommand(): 添加命令 ${command.name}: ${command.command}');
       
-      _commands.add(command);
-      await saveCommands();
+      // 确保命令ID是唯一的
+      final commandId = command.id.isEmpty ? const Uuid().v4() : command.id;
+      
+      // 创建新命令实例
+      final newCommand = SSHCommandModel(
+        id: commandId,
+        name: command.name,
+        command: command.command,
+        description: command.description,
+        type: command.type,
+        tags: command.tags,
+        isFavorite: command.isFavorite,
+      );
+      
+      // 添加到命令列表
+      _commands.add(newCommand);
+      
+      // 保存命令
+      await _saveCommandsInternal();
+      
+      // 通知监听器
       notifyListeners();
       
-      log.i('SSHCommandController', 'addCommand(): 命令添加成功');
+      debugPrint('SSHCommandController: 成功添加命令 "${command.name}"');
     } catch (e) {
-      log.e('SSHCommandController', '添加命令出错', e);
+      log.e('SSHCommandController', 'addCommand(): 添加命令失败: $e');
+      throw SSHException('添加命令失败: $e');
     } finally {
       _isBusy = false;
     }

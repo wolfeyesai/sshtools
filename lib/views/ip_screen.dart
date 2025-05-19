@@ -1,9 +1,10 @@
-// ignore_for_file: use_super_parameters, unused_import
+// ignore_for_file: use_super_parameters, unused_import, unused_local_variable
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../controllers/ip_controller.dart';
+import '../controllers/ssh_controller.dart';
 import '../providers/sidebar_provider.dart';
 import '../component/Button_component.dart';
 import '../component/progress_bar_component.dart';
@@ -39,6 +40,9 @@ class _IPPageState extends State<IPPage> with SingleTickerProviderStateMixin {
   // 标签控制器
   late TabController _tabController;
   
+  // 用于限制日志打印频率
+  static DateTime? _lastLogTime;
+  
   @override
   void initState() {
     super.initState();
@@ -50,7 +54,15 @@ class _IPPageState extends State<IPPage> with SingleTickerProviderStateMixin {
         // 切换到历史连接标签时，强制刷新会话列表
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            debugPrint('IPPage: 切换到历史连接标签页，立即刷新会话数据');
+            // 节流日志打印 - 只有超过5秒才打印
+            final now = DateTime.now();
+            final shouldLog = _lastLogTime == null || now.difference(_lastLogTime!).inSeconds > 5;
+            
+            if (shouldLog) {
+              _lastLogTime = now;
+              debugPrint('IPPage: 切换到历史连接标签页，立即刷新会话数据');
+            }
+            
             final sessionController = Provider.of<SSHSessionController>(context, listen: false);
             // 使用 Future.delayed 确保UI渲染完成后再加载数据
             Future.delayed(Duration.zero, () {
@@ -182,8 +194,15 @@ class _IPPageState extends State<IPPage> with SingleTickerProviderStateMixin {
                                 // 历史连接
                                 Consumer<SSHSessionController>(
                                   builder: (context, sessionController, _) {
-                                    // 强制刷新会话控制器
-                                    debugPrint('IPPage: 构建历史连接标签页组件');
+                                    // 限制日志打印频率
+                                    final now = DateTime.now();
+                                    final shouldLog = _lastLogTime == null || now.difference(_lastLogTime!).inSeconds > 5;
+                                    
+                                    if (shouldLog) {
+                                      _lastLogTime = now;
+                                      debugPrint('IPPage: 构建历史连接标签页组件');
+                                    }
+                                    
                                     // 确保不在build方法中执行异步操作，改用延迟处理
                                     if (_tabController.index == 1) {
                                       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -669,6 +688,19 @@ class _IPPageState extends State<IPPage> with SingleTickerProviderStateMixin {
   
   /// 连接到SSH设备
   void _connectToSSH(BuildContext context, IPDeviceModel device) {
+    // 获取会话控制器并确保它处于可用状态
+    final sessionController = Provider.of<SSHSessionController>(context, listen: false);
+    final sshController = Provider.of<SSHController>(context, listen: false);
+    
+    // 预先加载会话，避免"控制器忙"的问题
+    try {
+      debugPrint('预加载SSH会话数据...');
+      // 使用内部方法强制加载会话数据
+      sessionController.init();
+    } catch (e) {
+      debugPrint('预加载会话数据时出错: $e');
+    }
+    
     // 显示SSH连接对话框
     SSHConnectDialog.show(
       context,
@@ -683,17 +715,82 @@ class _IPPageState extends State<IPPage> with SingleTickerProviderStateMixin {
         );
         
         // 获取Provider并更新终端页面
-        Provider.of<SidebarProvider>(context, listen: false).updateTerminalPage(terminalPage);
+        final sidebarProvider = Provider.of<SidebarProvider>(context, listen: false);
         
-        // 切换到终端页面索引
-        Provider.of<SidebarProvider>(context, listen: false).setIndex(1);
+        debugPrint('开始连接到SSH设备: ${device.displayName} (${device.ipAddress})');
         
-        // 显示连接成功消息
-        MessageComponentFactory.showSuccess(
-          context,
-          message: '已连接到 ${device.displayName}',
-        );
+        // 使用两阶段处理：先切换索引，再延迟更新内容
+        // 第一阶段：切换到终端页面索引
+        sidebarProvider.setIndex(1);
+        
+        // 确保先将终端页面设置为"连接中"状态
+        final connectingWidget = _buildConnectingWidget(device);
+        sidebarProvider.updateTerminalPage(connectingWidget);
+        
+        // 第二阶段：增加延迟后更新终端内容
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (!context.mounted) return;
+          
+          debugPrint('更新终端页面内容 (500ms延迟后)');
+          
+          // 更新终端页面内容
+          sidebarProvider.updateTerminalPage(terminalPage);
+          
+          // 记录调试信息
+          debugPrint('终端页面内容已更新: ${device.displayName} (${device.ipAddress})');
+          
+          // 显示连接成功消息
+          MessageComponentFactory.showSuccess(
+            context,
+            message: '已连接到 ${device.displayName}',
+          );
+          
+          // 再次强制刷新
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (!context.mounted) return;
+            sidebarProvider.refresh();
+            debugPrint('额外UI刷新触发完成');
+          });
+        });
       },
+    );
+  }
+  
+  /// 构建连接中状态的Widget
+  Widget _buildConnectingWidget(IPDeviceModel device) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(
+            width: 60,
+            height: 60,
+            child: CircularProgressIndicator(),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            '正在连接到 ${device.displayName}',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '地址: ${device.ipAddress}',
+            style: const TextStyle(
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            '请稍候...',
+            style: TextStyle(
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
     );
   }
   

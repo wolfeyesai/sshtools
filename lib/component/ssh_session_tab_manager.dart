@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../models/ssh_saved_session_model.dart';
 import '../controllers/ssh_controller.dart';
 import '../models/ip_model.dart';
+import '../controllers/ssh_header_controller.dart';
+import '../models/ssh_header_model.dart';
 
 /// SSH会话标签管理组件
 /// 用于在SSH终端页面中管理多个会话标签
@@ -204,6 +206,9 @@ class SSHSessionTab {
   /// SSH控制器
   final SSHController controller;
   
+  /// SSH头部控制器
+  final SSHHeaderController headerController;
+  
   /// 是否已连接
   bool isConnected;
   
@@ -218,9 +223,16 @@ class SSHSessionTab {
     required this.password,
     required this.port,
     required this.controller,
+    SSHHeaderController? headerController,
     this.isConnected = false,
     this.connectionStatus = '准备连接...',
-  });
+  }) : headerController = headerController ?? SSHHeaderController(
+         model: SSHHeaderModel(
+           title: displayName,
+           isConnected: false,
+         ),
+         sshController: controller,
+       );
   
   /// 从会话模型创建
   factory SSHSessionTab.fromSessionModel(

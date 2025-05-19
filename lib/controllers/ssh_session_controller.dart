@@ -19,6 +19,9 @@ class SSHSessionController extends ChangeNotifier {
   /// 最后一次保存时间
   DateTime? _lastSaveTime;
   
+  /// 用于限制日志打印频率
+  static DateTime? _lastLogTime;
+  
   /// 获取会话列表
   List<SSHSavedSessionModel> get sessions => List.unmodifiable(_sessions);
   
@@ -32,6 +35,16 @@ class SSHSessionController extends ChangeNotifier {
   /// 获取会话数量
   int get sessionCount => _sessions.length;
   
+  // 添加一个方法用于判断是否应该打印日志
+  bool _shouldPrintLog() {
+    final now = DateTime.now();
+    if (_lastLogTime == null || now.difference(_lastLogTime!).inSeconds > 15) {
+      _lastLogTime = now;
+      return true;
+    }
+    return false;
+  }
+  
   /// 初始化控制器
   Future<void> init() async {
     if (_isBusy) {
@@ -42,16 +55,27 @@ class SSHSessionController extends ChangeNotifier {
     
     try {
       log.i('SSHSessionController', 'init(): 开始初始化会话控制器');
-      debugPrint('SSHSessionController.init(): 开始初始化，设置_isBusy=true');
+      
+      if (kDebugMode && _shouldPrintLog()) {
+        debugPrint('SSHSessionController.init(): 开始初始化，设置_isBusy=true');
+      }
+      
       await _loadSessionsInternal();
       log.i('SSHSessionController', 'init(): 会话控制器初始化完成，加载了 ${_sessions.length} 个会话');
     } catch (e) {
       log.e('SSHSessionController', '初始化SSH会话控制器出错', e);
-      debugPrint('SSHSessionController.init(): 初始化出错: $e');
+      
+      if (kDebugMode && _shouldPrintLog()) {
+        debugPrint('SSHSessionController.init(): 初始化出错: $e');
+      }
+      
       _sessions = [];
     } finally {
       _isBusy = false;
-      debugPrint('SSHSessionController.init(): 初始化完成，设置_isBusy=false');
+      
+      if (kDebugMode && _shouldPrintLog()) {
+        debugPrint('SSHSessionController.init(): 初始化完成，设置_isBusy=false');
+      }
     }
   }
   
@@ -62,13 +86,26 @@ class SSHSessionController extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = prefs.getString(_storageKey);
       
-      log.d('SSHSessionController', '_loadSessionsInternal(): 从SharedPreferences读取的数据', jsonString);
-      debugPrint('SSHSessionController._loadSessionsInternal(): 从存储读取的原始数据长度: ${jsonString?.length ?? 0}');
+      final shouldLog = kDebugMode && _shouldPrintLog();
+      
+      // 只在应该打印日志时输出详细数据
+      if (jsonString != null && jsonString.isNotEmpty) {
+        log.d('SSHSessionController', '_loadSessionsInternal(): 读取数据长度', jsonString.length);
+      } else {
+        log.d('SSHSessionController', '_loadSessionsInternal(): 读取数据为空');
+      }
+      
+      if (shouldLog && jsonString != null) {
+        debugPrint('SSHSessionController._loadSessionsInternal(): 从存储读取的原始数据长度: ${jsonString.length}');
+      }
       
       if (jsonString != null && jsonString.isNotEmpty) {
         try {
           final List<dynamic> jsonList = jsonDecode(jsonString);
-          debugPrint('SSHSessionController._loadSessionsInternal(): 解析后的JSON列表长度: ${jsonList.length}');
+          
+          if (shouldLog) {
+            debugPrint('SSHSessionController._loadSessionsInternal(): 解析后的JSON列表长度: ${jsonList.length}');
+          }
           
           _sessions = jsonList
               .map((json) => SSHSavedSessionModel.fromJson(json))
@@ -77,29 +114,29 @@ class SSHSessionController extends ChangeNotifier {
           // 按最后连接时间排序，最近的在前面
           _sessions.sort((a, b) => b.lastConnectedAt.compareTo(a.lastConnectedAt));
           
-          log.i('SSHSessionController', '_loadSessionsInternal(): 成功加载 ${_sessions.length} 个会话');
-          for (var session in _sessions) {
-            log.d('SSHSessionController', '已加载会话', '${session.name} (${session.host}:${session.port})');
-            debugPrint('SSHSessionController._loadSessionsInternal(): 加载会话: ${session.name} (${session.host}:${session.port})');
+          log.i('SSHSessionController', '_loadSessionsInternal(): 成功加载会话', '${_sessions.length}个');
+          
+          // 仅在调试模式下打印会话详细信息，且数量较少时
+          if (shouldLog && _sessions.length < 10) {
+            for (var session in _sessions) {
+              log.d('SSHSessionController', '已加载会话', '${session.name} (${session.host}:${session.port})');
+            }
           }
           
           notifyListeners();
           return true;
         } catch (e) {
           log.e('SSHSessionController', '解析SSH会话JSON出错', e);
-          debugPrint('SSHSessionController._loadSessionsInternal(): 解析SSH会话JSON出错: $e');
           _sessions = [];
           return false;
         }
       } else {
         log.w('SSHSessionController', '_loadSessionsInternal(): 未找到会话数据或数据为空');
-        debugPrint('SSHSessionController._loadSessionsInternal(): 未找到会话数据或数据为空');
         _sessions = [];
         return false;
       }
     } catch (e) {
       log.e('SSHSessionController', '加载SSH会话出错', e);
-      debugPrint('SSHSessionController._loadSessionsInternal(): 加载SSH会话出错: $e');
       _sessions = [];
       return false;
     }
@@ -110,43 +147,48 @@ class SSHSessionController extends ChangeNotifier {
     try {
       if (_sessions.isEmpty) {
         log.i('SSHSessionController', '_saveSessionsInternal(): 会话列表为空，跳过保存');
-        debugPrint('SSHSessionController._saveSessionsInternal(): 会话列表为空，跳过保存');
         return false;
       }
       
       log.i('SSHSessionController', '_saveSessionsInternal(): 开始保存 ${_sessions.length} 个会话到持久化存储');
-      debugPrint('SSHSessionController._saveSessionsInternal(): 开始保存 ${_sessions.length} 个会话到持久化存储');
       
       final prefs = await SharedPreferences.getInstance();
       final jsonList = _sessions.map((session) => session.toJson()).toList();
       final jsonString = jsonEncode(jsonList);
       
-      debugPrint('SSHSessionController._saveSessionsInternal(): 要保存的JSON数据长度: ${jsonString.length}');
+      if (kDebugMode && _shouldPrintLog()) {
+        debugPrint('SSHSessionController._saveSessionsInternal(): 要保存的JSON数据长度: ${jsonString.length}');
+      }
+      
       log.d('SSHSessionController', '_saveSessionsInternal(): 要保存的JSON数据', jsonString);
       
       final result = await prefs.setString(_storageKey, jsonString);
       if (result) {
         _lastSaveTime = DateTime.now();
         log.i('SSHSessionController', '_saveSessionsInternal(): 会话数据保存成功');
-        debugPrint('SSHSessionController._saveSessionsInternal(): 会话数据保存成功，时间: $_lastSaveTime');
         
-        // 验证保存结果
-        final savedData = prefs.getString(_storageKey);
-        if (savedData != null && savedData.isNotEmpty) {
-          debugPrint('SSHSessionController._saveSessionsInternal(): 验证保存结果成功，数据长度: ${savedData.length}');
-          return true;
-        } else {
-          debugPrint('SSHSessionController._saveSessionsInternal(): 警告：验证保存结果失败，无法读取保存的数据');
-          return false;
+        if (kDebugMode && _shouldPrintLog()) {
+          debugPrint('SSHSessionController._saveSessionsInternal(): 会话数据保存成功，时间: $_lastSaveTime');
+          
+          // 验证保存结果
+          final savedData = prefs.getString(_storageKey);
+          if (savedData != null && savedData.isNotEmpty) {
+            debugPrint('SSHSessionController._saveSessionsInternal(): 验证保存结果成功，数据长度: ${savedData.length}');
+          } else {
+            debugPrint('SSHSessionController._saveSessionsInternal(): 警告：验证保存结果失败，无法读取保存的数据');
+          }
         }
+        
+        return true;
       } else {
         log.e('SSHSessionController', '_saveSessionsInternal(): 会话数据保存失败');
-        debugPrint('SSHSessionController._saveSessionsInternal(): 会话数据保存失败');
         return false;
       }
     } catch (e) {
       log.e('SSHSessionController', '保存SSH会话出错', e);
-      debugPrint('SSHSessionController._saveSessionsInternal(): 保存SSH会话出错: $e');
+      if (kDebugMode && _shouldPrintLog()) {
+        debugPrint('SSHSessionController._saveSessionsInternal(): 保存SSH会话出错: $e');
+      }
       return false;
     }
   }
@@ -155,7 +197,11 @@ class SSHSessionController extends ChangeNotifier {
   Future<void> loadSessions() async {
     if (_isBusy) {
       log.w('SSHSessionController', 'loadSessions(): 控制器正忙，跳过加载');
-      debugPrint('SSHSessionController.loadSessions(): 控制器正忙，使用内部方法尝试加载');
+      
+      if (kDebugMode && _shouldPrintLog()) {
+        debugPrint('SSHSessionController.loadSessions(): 控制器正忙，使用内部方法尝试加载');
+      }
+      
       await _loadSessionsInternal();
       return;
     }
@@ -172,7 +218,9 @@ class SSHSessionController extends ChangeNotifier {
   Future<void> saveSessions() async {
     if (_isBusy) {
       log.w('SSHSessionController', 'saveSessions(): 控制器正忙，跳过保存');
-      debugPrint('SSHSessionController.saveSessions(): 控制器正忙，使用内部方法尝试保存');
+      if (kDebugMode && _shouldPrintLog()) {
+        debugPrint('SSHSessionController.saveSessions(): 控制器正忙，使用内部方法尝试保存');
+      }
       await _saveSessionsInternal();
       return;
     }

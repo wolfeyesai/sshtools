@@ -31,7 +31,7 @@ if "%choice%"=="1" (
     echo Building APK...
     flutter build apk --release
     echo.
-    echo Build completed! Check the build/app/outputs/flutter-apk/ directory for the APK file.
+    echo Build completed! Check the build/app/outputs/flutter-apk/ directory for the sshtools-release.apk file.
     pause
     goto :eof
 )

@@ -20,6 +20,19 @@ class SSHSessionHistory extends StatefulWidget {
 }
 
 class _SSHSessionHistoryState extends State<SSHSessionHistory> {
+  /// 用于限制日志打印频率
+  static DateTime? _lastLogTime;
+  
+  /// 检查是否应该打印日志
+  bool _shouldPrintLog() {
+    final now = DateTime.now();
+    if (_lastLogTime == null || now.difference(_lastLogTime!).inSeconds > 15) {
+      _lastLogTime = now;
+      return true;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -36,7 +49,9 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
   void _initSessionController() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        debugPrint('SSHSessionHistory: 初始化会话控制器');
+        if (_shouldPrintLog()) {
+          debugPrint('SSHSessionHistory: 初始化会话控制器');
+        }
         final sessionController = Provider.of<SSHSessionController>(context, listen: false);
         // 直接调用loadSessions而不是init，避免重复初始化
         Future.delayed(Duration.zero, () {
@@ -66,7 +81,9 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
       try {
         sessionController.markSessionAsUsed(session.id);
       } catch (e) {
-        debugPrint('标记会话使用时间出错: $e');
+        if (_shouldPrintLog()) {
+          debugPrint('标记会话使用时间出错: $e');
+        }
       }
       
       // 创建终端页面，但不立即使用
@@ -83,7 +100,6 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
           if (!context.mounted) return;
           
           // 首先显示轻量级消息
-          // 使用SnackBar而不是弹窗
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
             ..showSnackBar(
@@ -99,35 +115,38 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
               ),
             );
           
-          // 使用一小段延迟确保UI先更新
-          Future.delayed(const Duration(milliseconds: 100), () {
+          // 先切换到终端页面索引，然后更新内容
+          // 重要：先设置索引再更新页面内容
+          sidebarProvider.setIndex(1);
+          
+          // 添加更长的延迟确保先完成索引切换
+          Future.delayed(const Duration(milliseconds: 300), () {
             try {
               if (!context.mounted) return;
               
-              // 更新终端页面
+              // 更新终端页面内容
               sidebarProvider.updateTerminalPage(terminalPage);
               
-              // 再次使用延迟确保终端页面已更新
-              Future.delayed(const Duration(milliseconds: 50), () {
-                try {
-                  if (!context.mounted) return;
-                  
-                  // 切换到终端页面索引
-                  sidebarProvider.setIndex(1);
-                } catch (e) {
-                  debugPrint('切换到终端标签页出错: $e');
-                }
-              });
+              // 记录调试信息
+              if (_shouldPrintLog()) {
+                debugPrint('已切换到终端页面并更新内容: ${session.name} (${session.host})');
+              }
             } catch (e) {
-              debugPrint('更新终端页面出错: $e');
+              if (_shouldPrintLog()) {
+                debugPrint('更新终端页面出错: $e');
+              }
             }
           });
         } catch (e) {
-          debugPrint('连接会话处理出错: $e');
+          if (_shouldPrintLog()) {
+            debugPrint('连接会话处理出错: $e');
+          }
         }
       });
     } catch (e) {
-      debugPrint('SSH会话连接出错: $e');
+      if (_shouldPrintLog()) {
+        debugPrint('SSH会话连接出错: $e');
+      }
       
       // 非常轻量级的错误处理，避免状态更新问题
       if (context.mounted) {
@@ -204,7 +223,9 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
         await sessionController.toggleFavorite(session.id);
       });
     } catch (e) {
-      debugPrint('切换收藏状态失败: $e');
+      if (_shouldPrintLog()) {
+        debugPrint('切换收藏状态失败: $e');
+      }
     }
   }
   
@@ -248,17 +269,23 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
   @override
   Widget build(BuildContext context) {
     final sessionController = Provider.of<SSHSessionController>(context, listen: false);
-    // 确保每次构建时触发会话的重新加载
-    debugPrint('SSHSessionHistory: build方法被调用');
+    // 不再使用局部变量存储shouldLog结果，而是每次需要时都直接调用方法
+    
+    if (_shouldPrintLog()) {
+      debugPrint('SSHSessionHistory: build方法被调用');
+    }
+    
     // 避免在build方法中直接执行异步操作
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           // 确保数据已经加载
           if (sessionController.sessions.isEmpty) {
-            debugPrint('SSHSessionHistory: 会话列表为空，尝试重新加载');
+            if (_shouldPrintLog()) {
+              debugPrint('SSHSessionHistory: 会话列表为空，尝试重新加载');
+            }
             sessionController.loadSessions();
-          } else {
+          } else if (_shouldPrintLog()) {
             debugPrint('SSHSessionHistory: 会话列表已加载 ${sessionController.sessions.length} 个会话');
           }
         }
@@ -276,7 +303,9 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
               
           final List<SSHSavedSessionModel> sessions = [...favoritesSessions, ...nonFavoritesSessions];
           
-          debugPrint('SSHSessionHistory: Consumer构建UI，会话数: ${sessions.length}');
+          if (_shouldPrintLog()) {
+            debugPrint('SSHSessionHistory: Consumer构建UI，会话数: ${sessions.length}');
+          }
           
           if (sessions.isEmpty) {
             return _buildEmptyState();
@@ -328,7 +357,9 @@ class _SSHSessionHistoryState extends State<SSHSessionHistory> {
           );
         } catch (e) {
           // 出现错误时显示备用UI
-          debugPrint('SSH会话历史构建出错: $e');
+          if (_shouldPrintLog()) {
+            debugPrint('SSH会话历史构建出错: $e');
+          }
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
