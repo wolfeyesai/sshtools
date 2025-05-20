@@ -379,15 +379,30 @@ run_ios_app() {
   print_message $BLUE "===== 构建并运行 iOS 应用 ====="
   echo ""
   
+  # 获取当前目录
+  current_dir=$(pwd)
+  
+  # 确定项目根目录
+  project_root=$current_dir
+  if [[ "$current_dir" == */shdir ]]; then
+    # 如果在shdir中，返回上一级
+    project_root="$(dirname "$current_dir")"
+  elif [[ "$current_dir" == */ios ]]; then
+    # 如果在ios中，返回上一级
+    project_root="$(dirname "$current_dir")"
+  fi
+  
+  print_message $GREEN "项目根目录: $project_root"
+  
   # 检查 iOS 目录和 Pods
-  if [ ! -d "ios" ]; then
+  if [ ! -d "$project_root/ios" ]; then
     print_message $RED "未找到 iOS 目录。请先运行选项 3 重建 iOS 目录。"
     read -p "按回车键返回主菜单..."
     show_main_menu
     return
   fi
   
-  if [ ! -d "ios/Pods" ]; then
+  if [ ! -d "$project_root/ios/Pods" ]; then
     print_message $YELLOW "未找到 Pods 目录。您可能需要先运行选项 4 (pod install)。"
     read -p "是否继续? (y/n): " continue_without_pods
     if [[ "$continue_without_pods" != "y" ]]; then
@@ -396,13 +411,16 @@ run_ios_app() {
     fi
   fi
   
-  # 获取可用的 iOS 模拟器
-  print_message $GREEN "正在获取可用的 iOS 模拟器..."
-  simulators=$(flutter devices | grep -i iphone)
+  # 获取可用的 iOS 设备
+  print_message $GREEN "正在获取可用的 iOS 设备..."
+  all_devices=$(flutter devices)
+  simulators=$(echo "$all_devices" | grep -i "iphone" | grep -i "simulator")
+  real_devices=$(echo "$all_devices" | grep -i "iphone\|ios" | grep -v "simulator")
   
-  if [ -z "$simulators" ]; then
-    print_message $RED "未找到 iOS 模拟器。请确保已启动一个模拟器。"
-    print_message $YELLOW "您可以通过运行 'open -a Simulator' 启动模拟器。"
+  # 检查是否有可用设备
+  if [ -z "$simulators" ] && [ -z "$real_devices" ]; then
+    print_message $RED "未找到任何 iOS 设备或模拟器。"
+    print_message $YELLOW "您可以通过运行 'open -a Simulator' 启动模拟器，或连接真机设备。"
     read -p "是否尝试启动模拟器? (y/n): " start_simulator
     if [[ "$start_simulator" == "y" ]]; then
       print_message $GREEN "正在启动模拟器..."
@@ -414,13 +432,109 @@ run_ios_app() {
     return
   fi
   
-  print_message $GREEN "找到以下模拟器:"
-  echo "$simulators"
+  # 显示设备选择菜单
+  clear
+  print_message $BLUE "===== iOS 设备选择 ====="
   echo ""
   
+  # 显示所有设备
+  print_message $GREEN "检测到以下 iOS 设备:"
+  echo "$all_devices" | grep -i "iphone\|ios"
+  echo ""
+  
+  # 设备选择菜单
+  echo "请选择要使用的设备类型:"
+  echo "1. 使用真实设备 (如可用)"
+  echo "2. 使用模拟器 (如可用)"
+  echo "3. 返回主菜单"
+  echo ""
+  read -p "请选择 [1-3]: " device_choice
+  
+  device_id=""
+  
+  case $device_choice in
+    1)
+      if [ -z "$real_devices" ]; then
+        print_message $RED "未检测到任何真实 iOS 设备。请确保设备已连接并被信任。"
+        read -p "按回车键返回主菜单..."
+        show_main_menu
+        return
+      fi
+      
+      # 如果有多个真实设备，让用户选择
+      device_count=$(echo "$real_devices" | wc -l)
+      if [ "$device_count" -gt 1 ]; then
+        echo ""
+        print_message $GREEN "检测到多个真实设备，请选择:"
+        echo "$real_devices" | cat -n
+        read -p "请输入设备编号: " device_num
+        selected_device=$(echo "$real_devices" | sed -n "${device_num}p")
+      else
+        selected_device="$real_devices"
+      fi
+      
+      # 正确提取设备ID (第三列)
+      device_id=$(echo "$selected_device" | awk -F' • ' '{print $2}')
+      ;;
+    2)
+      if [ -z "$simulators" ]; then
+        print_message $YELLOW "未检测到模拟器。是否启动模拟器? (y/n)"
+        read -p "> " start_sim
+        if [[ "$start_sim" == "y" ]]; then
+          print_message $GREEN "启动模拟器..."
+          open -a Simulator
+          print_message $YELLOW "请等待模拟器启动，然后重新运行此选项。"
+          read -p "按回车键返回主菜单..."
+          show_main_menu
+          return
+        else
+          read -p "按回车键返回主菜单..."
+          show_main_menu
+          return
+        fi
+      fi
+      
+      # 如果有多个模拟器，让用户选择
+      simulator_count=$(echo "$simulators" | wc -l)
+      if [ "$simulator_count" -gt 1 ]; then
+        echo ""
+        print_message $GREEN "检测到多个模拟器，请选择:"
+        echo "$simulators" | cat -n
+        read -p "请输入模拟器编号: " sim_num
+        selected_simulator=$(echo "$simulators" | sed -n "${sim_num}p")
+      else
+        selected_simulator="$simulators"
+      fi
+      
+      # 正确提取设备ID (第三列)
+      device_id=$(echo "$selected_simulator" | awk -F' • ' '{print $2}')
+      ;;
+    3)
+      show_main_menu
+      return
+      ;;
+    *)
+      print_message $RED "无效的选择!"
+      read -p "按回车键返回主菜单..."
+      show_main_menu
+      return
+      ;;
+  esac
+  
+  if [ -z "$device_id" ]; then
+    print_message $RED "未能获取有效的设备 ID。"
+    read -p "按回车键返回主菜单..."
+    show_main_menu
+    return
+  fi
+  
   # 运行应用
-  print_message $GREEN "正在启动应用..."
-  flutter run -d "iPhone"
+  print_message $GREEN "正在设备 $device_id 上启动应用..."
+  cd "$project_root"
+  flutter run -d "$device_id"
+  
+  # 返回到原始目录
+  cd "$current_dir"
   
   # Flutter run 是交互式的，所以我们不使用 spinner
   
