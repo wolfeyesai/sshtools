@@ -139,3 +139,7 @@ flutter_launcher_icons:
   macos:
     generate: true
     image_path: "assets/icon/app_icon.png"
+    deployment_target: 11.0
+# macOS 平台特定配置
+macos:
+  deployment_target: 11.0
