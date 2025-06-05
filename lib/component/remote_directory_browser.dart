@@ -1,4 +1,4 @@
-// ignore_for_file: use_super_parameters, unused_import
+// ignore_for_file: use_super_parameters, unused_import, await_only_futures, unused_local_variable, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import '../controllers/ssh_controller.dart';
